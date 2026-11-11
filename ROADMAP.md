@@ -89,10 +89,18 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 - **Done:** ciclo completo persone → squadre → tesseramento → certificato → quota, verificato
   end-to-end sull'API con database persistente (il dato sopravvive al riavvio del server).
 
-> **Limite di verifica, da sanare alla prima sessione con un browser.** I test coprono API, database
-> e policy RLS. Le pagine React sono compilate, typecheck pulito e servite dal dev server, ma **non
-> sono state cliccate in un browser** in questo ambiente. Prima di considerare la FASE 1 rilasciabile
-> serve un giro manuale sui flussi di `web/src/pages` (login, creazione persona, roster, quota).
+### M5c — Verifica dell'interfaccia in browser [P0]
+- [x] `npm run e2e` (Playwright + Chromium): le pagine React vengono **cliccate**, non solo compilate.
+  Database PGlite dedicato `db/e2e-data`, ricreato e popolato a ogni esecuzione.
+- [x] Ciclo segreteria: login, dashboard, nuova anagrafica, ricerca, roster di squadra, quota,
+  versamento parziale con stato derivato, uscita. Ogni passo riletto dopo `reload`.
+- [x] Accessi negati visti dall'interfaccia: allenatore (solo la propria squadra, nessuna quota),
+  atleta (solo la propria posizione), tutore (solo il minore collegato). L'URL digitato a mano
+  non apre nulla in più: è la policy RLS a non restituire le righe.
+- [x] Mobile 360 px: il menù si apre dal pulsante, nessuno scorrimento orizzontale.
+- [x] Licenza: sospesa → fascia "Sola lettura" e salvataggio respinto con messaggio italiano,
+  dati intatti; riattivata → la fascia sparisce e la scrittura torna.
+- **Done:** il limite di verifica è sanato, la FASE 1 è stata provata in un browser vero.
 
 ### M5b — Licenza d'uso annuale [P0]
 - [x] `license`: riga unica con scadenza, `grace_days` e stato (`attiva`/`sospesa`). Stato operativo **derivato**
@@ -139,8 +147,9 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
   `comments`, `conversations`, `analytics_reports`.
 
 ## Quality gates
-- [x] Ogni slice è reale end-to-end dall'API al database e persiste dopo il riavvio (interfaccia: vedi limite sopra).
-- [x] `npm run check` (typecheck web + server) e `npm test` eseguiti, con casi di accesso negato.
+- [x] Ogni slice è reale end-to-end dall'interfaccia al database e persiste dopo il riavvio.
+- [x] `npm run check` (typecheck web + server + prove e2e), `npm test` e `npm run e2e` eseguiti,
+  con casi di accesso negato sia sull'API sia nell'interfaccia.
 - [x] Loading, vuoto, errore e feedback azione gestiti in tutte le pagine.
 - [x] Dati dei minori e dei certificati minimizzati; permessi in RLS server-side; nessun segreto nel repo.
 - [x] Nessuna funzionalità vietata introdotta.
@@ -166,6 +175,11 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 - D14 — **Rinnovo e riattivazione sono atti distinti.** `renew` sposta la scadenza, `reactivate` toglie la
   sospensione: rinnovare una licenza sospesa aggiorna le date ma non la riattiva da solo. Preavviso a
   30 giorni, come per i certificati; tolleranza predefinita 15 giorni, configurabile per licenza.
+- D15 — **L'interfaccia si verifica cliccandola.** Playwright con Chromium è l'unica dipendenza di
+  sviluppo aggiunta dopo l'impianto iniziale: senza un browser vero "typecheck pulito" non dice nulla
+  su un form che non si invia. Le prove girano su un database dedicato (`db/e2e-data`) perché una
+  verifica che sporca i dati di sviluppo non è ripetibile. Il canale del proprietario della licenza
+  resta fuori dalla sessione: nelle prove si chiama con il token di servizio, non cliccando.
 - D11 — Il seed è **cerca-o-crea**, non ricrea-da-zero. La stagione attiva già presente viene
   riusata (il vincolo `seasons_single_active_idx` ammette una sola riga `is_active`); persone e account
   si riconoscono da email o nome+data di nascita; gli stati amministrativi già modificati dalla segreteria
@@ -197,3 +211,13 @@ su server reale con database su disco: sospensione → GET /api/people 200 e POS
 italiano, admin senza token respinto 401, riattivazione → POST 200, rinnovo a 5 giorni → avviso
 "Licenza in scadenza tra 5 giorni" | prossimo: giro di verifica dell'interfaccia in browser |
 nessun blocker`
+`2026-11-11 | M5c | Giro di verifica dell'interfaccia in un browser vero: aggiunti `playwright.config.ts`
+(due webServer, API su 3100 e Vite su 5174, database `db/e2e-data`), `e2e/01-admin.spec.ts`,
+`e2e/02-permessi.spec.ts`, `e2e/03-licenza.spec.ts`, `e2e/helpers.ts`, `tsconfig.json` di radice per il
+typecheck delle prove, script `npm run e2e`, voce README. Due difetti reali trovati solo in browser e
+corretti nelle prove, non nel prodotto: il messaggio di login errato è "Email o password non corretti"
+e l'etichetta "Nome" è ambigua accanto a "Cognome" | npm run e2e (12/12 su Chromium), npm run check
+(pulito, ora include e2e), npm test (47/47), npm run build (ok) | nessun difetto dell'applicazione
+emerso: login, anagrafiche, roster, quote con versamento parziale, menù a 360 px, accessi negati di
+allenatore/atleta/tutore e sola lettura da licenza sospesa si comportano come specificato |
+prossimo: FASE 2 (M6) solo su approvazione esplicita | nessun blocker`

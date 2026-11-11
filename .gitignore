@@ -12,3 +12,6 @@ npm-debug.log*
 .idea/
 coverage/
 *.tsbuildinfo
+db/e2e-data/
+test-results/
+playwright-report/

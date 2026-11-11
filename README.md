@@ -32,11 +32,20 @@ Sono dati inventati a scopo di prova: non usarli in produzione.
 | Comando | Effetto |
 | --- | --- |
 | `npm run dev` | API e interfaccia in sviluppo |
-| `npm run check` | Typecheck di server e frontend |
+| `npm run check` | Typecheck di server, frontend e prove di interfaccia |
 | `npm test` | Test dell'API, compresi i casi di accesso negato |
+| `npm run e2e` | Prove in un browser vero sull'interfaccia (Playwright) |
 | `npm run migrate` | Applica le migrazioni mancanti |
 | `npm run seed` | Inserisce i dati sintetici |
 | `npm run build` | Build di produzione del frontend in `web/dist` |
+
+## Prove di interfaccia
+
+`npm run e2e` apre un browser vero e clicca le pagine: login, creazione anagrafica, roster,
+quota con versamento parziale, menù a 360 px, accessi negati di allenatore, atleta e tutore,
+licenza sospesa e riattivata. Gira su un database PGlite dedicato (`db/e2e-data`), ricreato e
+popolato a ogni esecuzione: i dati di sviluppo in `db/data` non vengono toccati.
+La prima volta serve scaricare il browser: `npx playwright install chromium`.
 
 ## Com'è fatto
 
