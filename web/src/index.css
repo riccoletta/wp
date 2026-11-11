@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@theme {
+  --color-acqua-50: #eff8ff;
+  --color-acqua-100: #d9eeff;
+  --color-acqua-600: #0b6ea8;
+  --color-acqua-700: #08567f;
+}
