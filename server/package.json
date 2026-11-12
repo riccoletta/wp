@@ -8,7 +8,8 @@
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
     "check": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "db:verify": "tsx src/verify-db.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

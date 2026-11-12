@@ -116,6 +116,55 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 - **Done:** il proprietario sospende → l'admin legge tutto ma non scrive → il proprietario riattiva →
   la scrittura torna, con i dati intatti.
 
+### M5d — Preparazione a PostgreSQL gestito (Supabase, solo database) [P0]
+- [x] `DATABASE_URL` resta l'unico aggancio: nessun Supabase Auth, nessun `supabase-js`, nessuna
+  dipendenza nuova. L'identità continua ad arrivare al database come `app.user_id`.
+- [x] `pg` configurato per il **Transaction Pooler** (futuro deploy su Vercel): poche connessioni
+  per istanza, `allowExitOnIdle` in serverless, `statement_timeout`, nessuna query preparata con
+  nome, nessun `SET` fuori transazione, errori di connessione caduta non fatali.
+- [x] TLS verificato per default con le CA di sistema; `DATABASE_CA_CERT` (PEM o percorso) per una
+  CA propria, `DATABASE_SSL=no-verify` solo come eccezione annunciata a console.
+- [x] Migrazioni separate dall'avvio dell'API: su Postgres gestito `npm run migrate` è un atto a
+  parte, tutte le migrazioni in **una transazione** protetta da `pg_advisory_xact_lock`, così due
+  istanze che partono insieme non si sovrappongono. L'API non si avvia con lo schema arretrato.
+  `MIGRATION_DATABASE_URL` per usare la connessione diretta invece del pooler.
+- [x] `0005_managed_postgres.sql`: `grant app_user to current_user` (su Supabase `postgres` non è
+  superutente e senza questo `set local role app_user` darebbe `42501`), `execute` sulle funzioni
+  usate dalle policy, revoca di ogni privilegio ad `anon` e `authenticated` sullo schema `public`.
+  Idempotente, nessun dato toccato, nessun reset.
+- [x] `npm run seed` rifiuta i dati dimostrativi con `NODE_ENV=production` o con `DATABASE_URL`
+  impostata: serve `ALLOW_DEMO_SEED=true` dichiarato a mano.
+- [x] `npm run db:verify`: prova sul database realmente configurato che il ruolo delle migrazioni
+  possa assumere `app_user`, che `app.user_id` arrivi, che l'anonimo non legga `people`, che
+  `sessions` e `license` rispondano `42501` al ruolo applicativo e che `anon`/`authenticated` non
+  abbiano privilegi residui.
+- [x] PGlite intatto per sviluppo e test (migrazioni automatiche, `db/data`, `db/e2e-data`);
+  licenza e `LICENSE_OWNER_TOKEN` invariati.
+- **Done:** il passaggio a Supabase è una questione di variabili d'ambiente più `npm run migrate`
+  e `npm run db:verify`.
+
+### M5e — Prova sul campo su Supabase reale [P0]
+- [x] Migrazioni `0001`–`0006` applicate su Supabase reale (PostgreSQL 17.11) con `npm run migrate`.
+- [x] Diagnosi del `permission denied to set role "app_user"`: la connessione applicativa
+  (Transaction Pooler, 6543) e quella delle migrazioni (diretta, 5432) sono **lo stesso ruolo**
+  `postgres`, non superutente, con `CREATEROLE`. `pg_auth_members` mostrava
+  `member=postgres, grantor=supabase_admin, admin_option=t, inherit_option=f, set_option=f`:
+  da PG16 la membership implicita al creatore del ruolo arriva con **SET FALSE**, quindi
+  `pg_has_role(...,'MEMBER')` è vero (ed è per questo che `0005` saltava il GRANT) ma
+  `set local role app_user` esce `42501`.
+- [x] `0006_app_user_set_role.sql`: `grant app_user to <ruolo corrente> with inherit false, set true`.
+  Privilegio minimo (solo la facoltà di assumere il ruolo, nessuna eredità passiva), idempotente,
+  nessun superutente, nessun `GRANT` a `PUBLIC`, RLS e policy invariate.
+- [x] `npm run db:verify` corretta: da PG16 verifica l'opzione `SET`, non la sola `MEMBER`
+  (il vecchio controllo dava OK su un ruolo che poi non poteva assumere `app_user`).
+- [x] `.env` letto dal server con il loader incluso in Node (nessuna dipendenza nuova); l'ambiente
+  vince sul file. `DATABASE_CA_CERT` serve davvero: Supabase firma con una CA propria.
+- [x] `npm run db:verify` su Supabase reale: 9 verifiche su 9 superate — `set local role app_user`,
+  `app.user_id` propagato, anonimo che non legge `people`, `42501` su `sessions` e su `license`,
+  nessun privilegio residuo per `anon`/`authenticated`.
+- [x] `npm run check` e `npm test` (47 test su PGlite, con i casi di accesso negato) invariati.
+- **Done:** l'applicazione parla con Supabase assumendo `app_user`; i permessi restano tutti in RLS.
+
 ---
 
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
@@ -180,6 +229,18 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
   su un form che non si invia. Le prove girano su un database dedicato (`db/e2e-data`) perché una
   verifica che sporca i dati di sviluppo non è ripetibile. Il canale del proprietario della licenza
   resta fuori dalla sessione: nelle prove si chiama con il token di servizio, non cliccando.
+- D16 — **Supabase è solo il database.** Niente Supabase Auth, niente `supabase-js`, niente
+  PostgREST: `anon` e `authenticated` restano senza privilegi sullo schema `public`. L'unica via
+  ai dati è l'API Express con RLS, quindi D8 e D9 non cambiano di una riga.
+- D17 — **Migrare non è avviare.** Su Postgres gestito le migrazioni sono un comando separato
+  (`npm run migrate`, una transazione con lock consultivo, connessione diretta); l'API con lo
+  schema arretrato si rifiuta di partire invece di migrare da sola. Su PGlite, processo singolo
+  su file locale, l'automatismo resta perché non c'è nessuna corsa da arbitrare.
+- D18 — **Su PostgreSQL 16+ essere membri non basta.** La membership ha opzioni separate
+  (`INHERIT`/`SET`) e quella implicita del creatore arriva con `SET FALSE`: il ruolo delle
+  migrazioni va abilitato con `GRANT ... WITH SET TRUE`, lasciando `INHERIT FALSE` perché assuma
+  `app_user` solo quando lo dichiara. Mai alzare il problema disattivando la RLS o usando un
+  superutente: il permesso concesso è il minimo che serve a `set local role`.
 - D11 — Il seed è **cerca-o-crea**, non ricrea-da-zero. La stagione attiva già presente viene
   riusata (il vincolo `seasons_single_active_idx` ammette una sola riga `is_active`); persone e account
   si riconoscono da email o nome+data di nascita; gli stati amministrativi già modificati dalla segreteria
@@ -221,3 +282,16 @@ e l'etichetta "Nome" è ambigua accanto a "Cognome" | npm run e2e (12/12 su Chro
 emerso: login, anagrafiche, roster, quote con versamento parziale, menù a 360 px, accessi negati di
 allenatore/atleta/tutore e sola lettura da licenza sospesa si comportano come specificato |
 prossimo: FASE 2 (M6) solo su approvazione esplicita | nessun blocker`
+`2026-11-12 | M5d | Preparazione a PostgreSQL gestito (Supabase, solo database): `server/src/db.ts`
+riscritto (pool `pg` per Transaction Pooler, TLS verificato, migrazioni in una transazione con
+`pg_advisory_xact_lock`, `pendingMigrations`), `migrate.ts` separato dall'avvio con
+`MIGRATION_DATABASE_URL`, `index.ts` che non parte con schema arretrato, `seed.ts` che rifiuta la
+produzione, nuovo `0005_managed_postgres.sql` (GRANT `app_user` a chi migra, EXECUTE sulle funzioni
+delle policy, revoca totale ad `anon`/`authenticated`), nuovo `npm run db:verify`, `.env.example` e
+README aggiornati | npm run check (pulito), npm test (47/47), npm run e2e (12/12 su Chromium),
+`npm run migrate` su database vergine (0001→0005 applicate in ordine), `npm run db:verify` su
+database popolato (7 persone in tabella, 0 visibili all'anonimo, `42501` su `sessions` e su
+`license`), `NODE_ENV=production npm run seed` respinto | prossimo: impostare `DATABASE_URL` e
+`MIGRATION_DATABASE_URL` di Supabase nell'ambiente, poi `npm run migrate` e `npm run db:verify`
+sul progetto reale | BLOCKER: nessuna `DATABASE_URL` disponibile qui, la verifica su Supabase
+reale resta da eseguire`

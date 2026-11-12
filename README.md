@@ -36,7 +36,8 @@ Sono dati inventati a scopo di prova: non usarli in produzione.
 | `npm test` | Test dell'API, compresi i casi di accesso negato |
 | `npm run e2e` | Prove in un browser vero sull'interfaccia (Playwright) |
 | `npm run migrate` | Applica le migrazioni mancanti |
-| `npm run seed` | Inserisce i dati sintetici |
+| `npm run seed` | Inserisce i dati sintetici (rifiutato in produzione) |
+| `npm run db:verify` | Prova ruolo `app_user`, `app.user_id`, RLS e licenza sul database configurato |
 | `npm run build` | Build di produzione del frontend in `web/dist` |
 
 ## Prove di interfaccia
@@ -62,15 +63,53 @@ chiamando direttamente l'API.
 ## Database
 
 Senza `DATABASE_URL` l'applicazione usa **PGlite**: PostgreSQL embedded, salvato in `db/data/`.
-Non serve Docker e i dati restano fra un riavvio e l'altro.
+Non serve Docker, i dati restano fra un riavvio e l'altro e le migrazioni mancanti si applicano
+da sole all'avvio. È la modalità di sviluppo e dei test.
 
-Per un Postgres vero (Supabase o altro) basta valorizzare `DATABASE_URL`: le migrazioni sono
-SQL standard e girano identiche. Il ruolo `app_user` viene creato dalla prima migrazione.
+Con `DATABASE_URL` si usa un Postgres vero: stesso SQL, stesse policy. Le migrazioni **non**
+partono più da sole, per non farle correre a due istanze insieme; l'API si rifiuta di avviarsi
+con uno schema arretrato e dice quale migrazione manca.
 
 ```bash
-DATABASE_URL=postgres://utente:password@host:5432/db npm run migrate
-DATABASE_URL=... PORT=3000 npm run start --workspace=server
+npm run migrate      # applica le migrazioni mancanti, in una sola transazione con lock
+npm run db:verify    # verifica ruolo, identità, RLS e divieto di scrittura sulla licenza
+npm run start --workspace=server
 ```
+
+### Supabase (solo database)
+
+Supabase è usato **esclusivamente come PostgreSQL gestito**: niente Supabase Auth, niente
+`supabase-js`. L'unica strada verso i dati resta l'API Express con `SET LOCAL ROLE app_user`
+e `app.user_id`.
+
+1. **Stringhe di connessione** (Dashboard → Project Settings → Database). Vanno messe nelle
+   variabili d'ambiente dell'hosting (su Vercel: Project Settings → Environment Variables),
+   mai nel repository e mai in chat.
+   - `DATABASE_URL` → **Transaction Pooler**, porta `6543`: è quella giusta per Vercel e per
+     qualsiasi ambiente serverless, perché regge molte istanze con poche connessioni.
+   - `MIGRATION_DATABASE_URL` → **connessione diretta**, porta `5432`: le migrazioni fanno DDL
+     e vogliono una sessione stabile.
+2. `npm run migrate` una volta, da una macchina fidata o da un passo di deploy dedicato.
+   Applica solo le migrazioni mancanti: non azzera e non ricrea nulla.
+3. `npm run db:verify` per la prova sul campo: il ruolo delle migrazioni può assumere
+   `app_user`, l'identità arriva al database, un utente anonimo non legge `people`, `sessions`
+   e `license` rispondono `42501` al ruolo applicativo, `anon`/`authenticated` non hanno privilegi.
+4. `COOKIE_SECURE=true` e `WEB_ORIGIN` sull'origine reale del frontend.
+
+La migrazione `0005_managed_postgres.sql` sistema quello che su un Postgres gestito non è
+automatico: su Supabase `postgres` non è superutente, quindi gli serve un `GRANT app_user`
+esplicito per poter eseguire `SET LOCAL ROLE app_user`; `app_user` riceve l'`EXECUTE` sulle
+funzioni chiamate dalle policy; i ruoli `anon` e `authenticated` — quelli che Supabase espone
+via PostgREST — perdono ogni privilegio sullo schema `public`, perché qui non li usiamo.
+È bene disattivare comunque la Data API del progetto Supabase.
+
+Il pool di `pg` è configurato per il pooler in modalità transazione: nessuna query preparata
+con nome, nessun `SET` fuori da una transazione, poche connessioni per istanza e TLS verificato
+con le CA di sistema (`DATABASE_CA_CERT` solo se serve una CA propria).
+
+**Dati dimostrativi.** `npm run seed` si ferma da solo con `NODE_ENV=production` o con
+`DATABASE_URL` impostata: per un ambiente di prova va sbloccato a mano con `ALLOW_DEMO_SEED=true`.
+Un database di produzione parte vuoto, con il primo admin creato a mano.
 
 In produzione servire `web/dist` da un web server e inoltrare `/api` al processo Node,
 con `COOKIE_SECURE=true` perché il cookie di sessione viaggi solo su HTTPS.
