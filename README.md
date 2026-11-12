@@ -37,6 +37,7 @@ Sono dati inventati a scopo di prova: non usarli in produzione.
 | `npm run e2e` | Prove in un browser vero sull'interfaccia (Playwright) |
 | `npm run migrate` | Applica le migrazioni mancanti |
 | `npm run seed` | Inserisce i dati sintetici (rifiutato in produzione) |
+| `npm run admin:bootstrap` | Crea il **primo** amministratore su un database vuoto (password digitata a schermo spento) |
 | `npm run db:verify` | Prova ruolo `app_user`, `app.user_id`, RLS e licenza sul database configurato |
 | `npm run build` | Build di produzione del frontend in `web/dist` |
 | `npm run build:vercel` | Build di deploy: frontend in `web/dist` + API compilata in `server/dist` |
@@ -157,10 +158,30 @@ nessun CORS e il cookie di sessione resta `SameSite=Lax` di prima parte.
 
    `MIGRATION_DATABASE_URL`, `PGLITE_DIR`, `WEB_ORIGIN` e `ALLOW_DEMO_SEED` **non** vanno su
    Vercel: migrazioni e seed si lanciano a mano, l'origine è la stessa del sito.
-   `DATABASE_CA_CERT` accetta il PEM inline (anche con `\n` letterali o in base64): nessun
-   percorso di file, che su Vercel non esisterebbe.
+   `DATABASE_CA_CERT` accetta il PEM inline (anche con `\n` letterali o in base64): **mai** un
+   percorso di file, che su Vercel non esisterebbe. Un percorso che non esiste non abbassa la
+   verifica TLS: la funzione si ferma con un errore esplicito. Per copiarlo senza stamparlo:
+
+   ```bash
+   base64 < prod-ca-2021.crt | tr -d '\n' \
+     | vercel env add DATABASE_CA_CERT --environment production,preview --sensitive --force
+   ```
 4. Deploy. Prova di fumo: `https://<dominio>/api/health` risponde `{"ok":true}`, il login
    funziona e `https://<dominio>/api/people` senza sessione risponde `401`.
+5. **Primo amministratore.** Il database appena migrato è vuoto: nessun account esiste e nessuno
+   si crea da solo. Da una macchina fidata, con la connessione **diretta** del ruolo proprietario
+   (`app_runtime` non può scrivere in `people`):
+
+   ```bash
+   MIGRATION_DATABASE_URL='postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres' \
+     npm run admin:bootstrap -- --email=segreteria@tuaSocieta.it --nome=Nome --cognome=Cognome
+   ```
+
+   La password si digita al prompt, non compare a schermo, non è un argomento e non finisce in
+   nessun file. Il comando crea in **una** transazione `people` + `app_users` + ruolo `admin`.
+   È rieseguibile: se l'email esiste già non tocca la password, e se un amministratore esiste
+   già si ferma (serve `--aggiungi` per crearne un secondo di proposito). Non ha niente a che
+   vedere con `npm run seed`, che i dati dimostrativi li rifiuta in produzione.
 
 Cosa resta valido in produzione: i permessi sono solo policy RLS, il cookie è `httpOnly` e
 `Secure`, le scritture da un'origine estranea sono respinte con `403` (oltre a `SameSite=Lax`),

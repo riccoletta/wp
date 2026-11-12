@@ -10,7 +10,8 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "db:verify": "tsx src/verify-db.ts"
+    "db:verify": "tsx src/verify-db.ts",
+    "admin:bootstrap": "tsx src/bootstrap-admin.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

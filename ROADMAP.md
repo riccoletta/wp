@@ -193,6 +193,27 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 - **Done quando:** il dominio serve l'interfaccia, `/api` risponde sulla stessa origine e
   `db:verify` dice `current_user=app_runtime`.
 
+### M5g — Primo accesso in produzione [P0]
+- [x] Diagnosi del `FUNCTION_INVOCATION_FAILED` su `/api/health`: dai log runtime di Vercel,
+  `ENOENT /Users/.../Downloads/prod-ca-2021.crt` in `readCa` → `sslConfig` → `initDb`.
+  `DATABASE_CA_CERT` conteneva il **percorso** del certificato sul Mac, non il certificato:
+  su Vercel quel file non esiste, l'avvio della funzione muore e cade ogni richiesta `/api`.
+- [x] `resolveCaCert`: un valore che non è PEM né base64 né un file leggibile ora alza un errore
+  parlante che nomina la variabile. Nessun ripiego su `rejectUnauthorized: false`: una CA
+  introvabile è un errore di configurazione, non un motivo per non verificare il certificato.
+- [x] `api/index.mjs`: un avvio fallito non resta appiccicato all'istanza calda (`ready`
+  azzerato) e la risposta è un `503` JSON leggibile invece di un crash del runtime.
+- [x] `npm run admin:bootstrap`: primo amministratore su database vuoto. Password digitata a
+  schermo spento (mai argomento, mai variabile, mai stampata), `people` + `app_users` +
+  `user_roles('admin')` in una sola transazione, hash `scrypt` già in uso dal login.
+  Idempotente: email esistente → password intatta; amministratore già presente → si ferma,
+  salvo `--aggiungi` dichiarato a mano. Niente a che vedere con il seed dimostrativo.
+- [x] Test (7 nuovi, 59 in totale): creazione coerente, login reale dell'amministratore creato,
+  idempotenza con password non sovrascritta, rifiuto del secondo admin, password deboli ed
+  email non valide, PEM/base64/percorso inesistente per la CA.
+- [ ] `DATABASE_CA_CERT` corretta su Vercel con il PEM (richiede scrittura sul secret store).
+- [ ] `/api/health` a `200` sul dominio reale e login dell'amministratore appena creato.
+
 ---
 
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
@@ -332,3 +353,13 @@ database popolato (7 persone in tabella, 0 visibili all'anonimo, `42501` su `ses
 `MIGRATION_DATABASE_URL` di Supabase nell'ambiente, poi `npm run migrate` e `npm run db:verify`
 sul progetto reale | BLOCKER: nessuna `DATABASE_URL` disponibile qui, la verifica su Supabase
 reale resta da eseguire`
+
+- D18 — **Un percorso di file non è un segreto portabile.** `DATABASE_CA_CERT` su un ambiente
+  serverless deve contenere il certificato, non dove sta sul computer di chi ha fatto il deploy.
+  Quando il valore non è utilizzabile l'applicazione si ferma e lo dice: abbassare la verifica
+  TLS per far partire la funzione sarebbe barattare la sicurezza con un `200`.
+- D19 — **Il primo amministratore è un atto manuale, come le migrazioni.** Non esiste una pagina
+  di registrazione del primo utente (sarebbe una porta aperta sul deploy appena fatto) e il seed
+  dimostrativo resta vietato in produzione. `npm run admin:bootstrap` gira dalla connessione del
+  ruolo proprietario, chiede la password a schermo spento e non sovrascrive mai un amministratore
+  esistente: gli account successivi si creano per invito, dalla segreteria.

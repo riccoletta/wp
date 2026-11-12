@@ -101,22 +101,33 @@ function sslConfig(url: string) {
     return { rejectUnauthorized: false }
   }
   const cert = process.env.DATABASE_CA_CERT?.trim()
-  return { rejectUnauthorized: true, ...(cert ? { ca: readCa(cert) } : {}) }
+  return { rejectUnauthorized: true, ...(cert ? { ca: resolveCaCert(cert) } : {}) }
 }
 
 /**
- * La CA può arrivare come percorso di file (sviluppo) oppure, dove un file non c'è,
- * come PEM inline, con `\n` letterali o in base64: su Vercel è una variabile d'ambiente,
- * non un percorso del Mac di qualcuno.
+ * La CA può arrivare come PEM inline, con `\n` letterali o in base64 (su Vercel è una
+ * variabile d'ambiente), oppure come percorso di file (solo in sviluppo, sulla macchina
+ * che quel file ce l'ha davvero). Un percorso che non esiste non è un motivo per
+ * abbassare la verifica TLS: è un errore di configurazione e va detto a voce alta.
  */
-function readCa(value: string): string {
+export function resolveCaCert(value: string): string {
   const text = value.includes('\\n') ? value.replace(/\\n/g, '\n') : value
   if (text.includes('-----BEGIN')) return text
   if (text.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(text)) {
     const decoded = Buffer.from(text, 'base64').toString('utf8')
     if (decoded.includes('-----BEGIN')) return decoded
   }
-  return readFileSync(path.resolve(root, text), 'utf8')
+  try {
+    const pem = readFileSync(path.resolve(root, text), 'utf8')
+    if (!pem.includes('-----BEGIN')) throw new Error('il file non contiene un certificato PEM')
+    return pem
+  } catch (err) {
+    throw new Error(
+      `DATABASE_CA_CERT non è un certificato utilizzabile ("${text.slice(0, 40)}"...): ` +
+        'in un ambiente serverless va messo il PEM, anche in base64, non il percorso di un file locale. ' +
+        `Dettaglio: ${err instanceof Error ? err.message : err}`,
+    )
+  }
 }
 
 async function pgDriver(url: string): Promise<Driver> {

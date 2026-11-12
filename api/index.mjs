@@ -27,8 +27,19 @@ function normalizeBody(req) {
 }
 
 export default async function handler(req, res) {
-  ready ??= boot()
-  await ready
+  try {
+    ready ??= boot()
+    await ready
+  } catch (err) {
+    // Un avvio fallito non deve restare appiccicato all'istanza calda: azzerando
+    // `ready` la richiesta successiva riprova (p.es. dopo una variabile corretta).
+    ready = undefined
+    console.error('Avvio della funzione fallito:', err)
+    res.statusCode = 503
+    res.setHeader('content-type', 'application/json; charset=utf-8')
+    res.setHeader('cache-control', 'no-store')
+    return res.end(JSON.stringify({ error: 'Servizio non disponibile: il database non risponde.' }))
+  }
   normalizeBody(req)
   return app(req, res)
 }
