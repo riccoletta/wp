@@ -33,6 +33,11 @@ export interface CurrentUser {
   lastName: string
 }
 
+/** In produzione il cookie viaggia solo su HTTPS, anche se nessuno lo ha dichiarato. */
+const secureCookie = () =>
+  process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === 'true'
+    : process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+
 export async function createSession(res: Response, userId: string) {
   const token = newToken()
   const expires = new Date(Date.now() + SESSION_DAYS * 864e5)
@@ -44,7 +49,7 @@ export async function createSession(res: Response, userId: string) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.COOKIE_SECURE === 'true',
+    secure: secureCookie(),
     expires,
     path: '/',
   })

@@ -5,6 +5,7 @@ import {
   COOKIE, createSession, currentUser, destroySession, hashPassword, newToken, sha256, verifyPassword,
 } from '../auth.js'
 import { HttpError, body } from '../http.js'
+import { assertLoginAllowed, clearLoginFailures, clientIp, recordLoginFailure } from '../security.js'
 
 export const authRouter = Router()
 
@@ -13,12 +14,18 @@ const loginSchema = z.object({ email: z.string().email(), password: z.string().m
 authRouter.post('/login', async (req, res, next) => {
   try {
     const { email, password } = body(loginSchema, req)
+    const ip = clientIp(req)
+    await assertLoginAllowed(email, ip)
     const user = await asSystem((tx) =>
       tx.one<any>('select id, password_hash, active from app_users where lower(email) = lower($1)', [email]),
     )
     // Stessa risposta per utente inesistente, disattivato o password errata.
     const ok = user?.active && (await verifyPassword(password, user.password_hash))
-    if (!ok) throw new HttpError(401, 'Email o password non corretti')
+    if (!ok) {
+      await recordLoginFailure(email, ip)
+      throw new HttpError(401, 'Email o password non corretti')
+    }
+    await clearLoginFailures(email, ip)
     await createSession(res, user.id)
     res.json({ ok: true })
   } catch (err) { next(err) }

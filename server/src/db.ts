@@ -101,8 +101,22 @@ function sslConfig(url: string) {
     return { rejectUnauthorized: false }
   }
   const cert = process.env.DATABASE_CA_CERT?.trim()
-  const ca = cert ? (cert.startsWith('-----BEGIN') ? cert : readFileSync(path.resolve(root, cert), 'utf8')) : undefined
-  return { rejectUnauthorized: true, ...(ca ? { ca } : {}) }
+  return { rejectUnauthorized: true, ...(cert ? { ca: readCa(cert) } : {}) }
+}
+
+/**
+ * La CA può arrivare come percorso di file (sviluppo) oppure, dove un file non c'è,
+ * come PEM inline, con `\n` letterali o in base64: su Vercel è una variabile d'ambiente,
+ * non un percorso del Mac di qualcuno.
+ */
+function readCa(value: string): string {
+  const text = value.includes('\\n') ? value.replace(/\\n/g, '\n') : value
+  if (text.includes('-----BEGIN')) return text
+  if (text.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(text)) {
+    const decoded = Buffer.from(text, 'base64').toString('utf8')
+    if (decoded.includes('-----BEGIN')) return decoded
+  }
+  return readFileSync(path.resolve(root, text), 'utf8')
 }
 
 async function pgDriver(url: string): Promise<Driver> {

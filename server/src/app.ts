@@ -7,11 +7,14 @@ import { dashboardRouter } from './routes/dashboard.js'
 import { licenseRouter, ownerLicenseRouter } from './routes/license.js'
 import { cookieParser, errorHandler, requireAuth } from './http.js'
 import { licenseGate } from './license.js'
+import { sameOrigin } from './security.js'
 
 export function createApp() {
   const app = express()
   app.use(express.json())
   app.use(cookieParser)
+  // CSRF: nessuna scrittura da un'origine che non sia la nostra.
+  app.use(sameOrigin)
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))
   app.use('/api/auth', authRouter)

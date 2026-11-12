@@ -39,6 +39,7 @@ Sono dati inventati a scopo di prova: non usarli in produzione.
 | `npm run seed` | Inserisce i dati sintetici (rifiutato in produzione) |
 | `npm run db:verify` | Prova ruolo `app_user`, `app.user_id`, RLS e licenza sul database configurato |
 | `npm run build` | Build di produzione del frontend in `web/dist` |
+| `npm run build:vercel` | Build di deploy: frontend in `web/dist` + API compilata in `server/dist` |
 
 ## Prove di interfaccia
 
@@ -113,6 +114,58 @@ Un database di produzione parte vuoto, con il primo admin creato a mano.
 
 In produzione servire `web/dist` da un web server e inoltrare `/api` al processo Node,
 con `COOKIE_SECURE=true` perché il cookie di sessione viaggi solo su HTTPS.
+
+### Ruolo di esecuzione a privilegio minimo
+
+L'API **non** deve collegarsi con il ruolo delle migrazioni (`postgres`: proprietario dello
+schema, esente dalla RLS, capace di DDL). La migrazione `0007` crea `app_runtime`, che sa fare
+due sole cose: assumere `app_user` (da lì passa tutto il traffico, sotto RLS) ed eseguire le
+poche query di sistema dell'autenticazione — sessioni, login, inviti, stato licenza. Niente DDL,
+nessun privilegio su squadre, tesseramenti, certificati o quote.
+
+`LOGIN` e password non stanno nel repository: si impostano una volta sul database, con una
+password lunga e casuale generata da te (Supabase → SQL Editor):
+
+```sql
+alter role app_runtime with login password '<password-lunga-e-casuale>';
+```
+
+Poi `DATABASE_URL` punta a quel ruolo. Sul Transaction Pooler di Supabase l'utente si scrive
+`<ruolo>.<project-ref>`, quindi `app_runtime.<project-ref>` al posto di `postgres.<project-ref>`.
+`MIGRATION_DATABASE_URL` resta sul ruolo proprietario: migrare è un atto separato (D17).
+`npm run db:verify` dirà `current_user=app_runtime`.
+
+## Deploy su Vercel
+
+Monorepo invariato: il frontend è un sito statico, l'API una sola funzione serverless
+(`api/index.mjs`) che monta la stessa app Express. Stessa origine, quindi `/api` non attraversa
+nessun CORS e il cookie di sessione resta `SameSite=Lax` di prima parte.
+
+1. **Prima del primo deploy**, da una macchina fidata: `npm run migrate` e `npm run db:verify`
+   sul database Supabase. Il deploy non migra e non semina mai nulla.
+2. Importa il repository su Vercel. `vercel.json` è già nel repo: build `npm run build:vercel`,
+   output `web/dist`, riscrittura di `/api/*` sulla funzione e fallback SPA sul resto.
+3. Variabili d'ambiente del progetto (Production, e Preview se lo usi):
+
+   | Variabile | Valore |
+   | --- | --- |
+   | `DATABASE_URL` | Transaction Pooler, porta 6543, utente `app_runtime.<project-ref>` |
+   | `DATABASE_CA_CERT` | contenuto del certificato CA di Supabase, incollato per intero (PEM) |
+   | `COOKIE_SECURE` | `true` |
+   | `LICENSE_OWNER_TOKEN` | token di servizio del proprietario (solo se vuoi il canale licenza) |
+   | `NODE_ENV` | `production` (impostata da Vercel) |
+
+   `MIGRATION_DATABASE_URL`, `PGLITE_DIR`, `WEB_ORIGIN` e `ALLOW_DEMO_SEED` **non** vanno su
+   Vercel: migrazioni e seed si lanciano a mano, l'origine è la stessa del sito.
+   `DATABASE_CA_CERT` accetta il PEM inline (anche con `\n` letterali o in base64): nessun
+   percorso di file, che su Vercel non esisterebbe.
+4. Deploy. Prova di fumo: `https://<dominio>/api/health` risponde `{"ok":true}`, il login
+   funziona e `https://<dominio>/api/people` senza sessione risponde `401`.
+
+Cosa resta valido in produzione: i permessi sono solo policy RLS, il cookie è `httpOnly` e
+`Secure`, le scritture da un'origine estranea sono respinte con `403` (oltre a `SameSite=Lax`),
+dieci password sbagliate sulla stessa email valgono quindici minuti di `429`, e la licenza
+scaduta toglie la scrittura senza toccare i dati.
 
 ## Dati personali
 

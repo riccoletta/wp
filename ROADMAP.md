@@ -165,6 +165,34 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 - [x] `npm run check` e `npm test` (47 test su PGlite, con i casi di accesso negato) invariati.
 - **Done:** l'applicazione parla con Supabase assumendo `app_user`; i permessi restano tutti in RLS.
 
+### M5f — Deploy su Vercel (stessa origine, API serverless) [P0]
+- [x] `api/index.mjs`: la stessa app Express servita da una funzione serverless; `initDb` una
+  volta per cold start, corpo della richiesta già letto dal runtime gestito senza bloccare
+  `express.json()`. Nessuna migrazione e nessun seed all'avvio (D17 invariato).
+- [x] `vercel.json`: build `npm run build:vercel`, statico da `web/dist`, `/api/*` riscritto
+  sulla funzione, fallback SPA sul resto, intestazioni di sicurezza (`nosniff`, `DENY`,
+  `Referrer-Policy`, HSTS, `no-store` sulle risposte API). Stessa origine: nessun CORS.
+- [x] `0007_app_runtime_role.sql`: ruolo di esecuzione `app_runtime`, `noinherit`, che può solo
+  assumere `app_user` ed eseguire le query di sistema dell'autenticazione (sessioni, login,
+  inviti, stato licenza). Nessun DDL, nessun privilegio su squadre/tesseramenti/certificati/quote.
+  `LOGIN` e password si impostano a mano sul database: nel repository non entra nessun segreto.
+- [x] CSRF: ogni scrittura che dichiara un'origine deve dichiarare la nostra, oltre al cookie
+  `SameSite=Lax`. Le letture non sono toccate.
+- [x] `0008_login_attempts.sql` + freno ai tentativi di accesso: dieci password sbagliate sulla
+  stessa email (trenta per indirizzo) valgono quindici minuti di `429`. Tabella invisibile ai
+  ruoli applicativi, scritta solo dal ruolo di sistema.
+- [x] Cookie di sessione `Secure` per default in produzione, anche senza `COOKIE_SECURE`.
+- [x] `DATABASE_CA_CERT` accetta il PEM inline o in base64: su Vercel è una variabile
+  d'ambiente, non un percorso di file di una macchina.
+- [x] `npm run check`, `npm test` (52 test, compresi CSRF e `429`), `npm run build:vercel`.
+  Ingresso serverless provato davvero in locale: `health`, login con cookie `HttpOnly`, `/api/me`,
+  lettura di `people`, `401` senza sessione, `403` da origine estranea.
+- [ ] `npm run migrate` + `npm run db:verify` su Supabase con `0007`/`0008` e con
+  `DATABASE_URL` sul ruolo `app_runtime` (richiede la password impostata a mano sul database).
+- [ ] Deploy su Vercel e prova di fumo sul dominio reale.
+- **Done quando:** il dominio serve l'interfaccia, `/api` risponde sulla stessa origine e
+  `db:verify` dice `current_user=app_runtime`.
+
 ---
 
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
@@ -241,6 +269,15 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
   migrazioni va abilitato con `GRANT ... WITH SET TRUE`, lasciando `INHERIT FALSE` perché assuma
   `app_user` solo quando lo dichiara. Mai alzare il problema disattivando la RLS o usando un
   superutente: il permesso concesso è il minimo che serve a `set local role`.
+- D19 — **Chi serve le richieste non è chi le migra.** L'API gira con `app_runtime`: può
+  assumere `app_user` e fare le sole query di sistema dell'autenticazione. Il ruolo proprietario
+  resta alle migrazioni, su una connessione diversa e lanciata a mano. Una credenziale rubata
+  all'applicazione non dà DDL, non bypassa la RLS e non tocca quote, squadre o certificati.
+- D20 — **Vercel: stessa origine, una funzione sola.** Il frontend è statico, `/api/*` è
+  riscritto su `api/index.mjs` che monta la stessa app Express. Niente CORS da allargare,
+  cookie di prima parte, nessun secondo backend da tenere allineato. CSRF coperto da
+  `SameSite=Lax` più il controllo d'origine sulle scritture; il freno sui tentativi di accesso
+  sta nel database perché in serverless la memoria di un'istanza non vale nulla.
 - D11 — Il seed è **cerca-o-crea**, non ricrea-da-zero. La stagione attiva già presente viene
   riusata (il vincolo `seasons_single_active_idx` ammette una sola riga `is_active`); persone e account
   si riconoscono da email o nome+data di nascita; gli stati amministrativi già modificati dalla segreteria
