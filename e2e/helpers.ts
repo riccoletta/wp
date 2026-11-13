@@ -7,7 +7,16 @@ export const ACCOUNTS = {
   guardian: 'tutore@example.test',
 } as const
 
-export const PASSWORD = 'password123'
+/**
+ * Password degli account sintetici nell'ambiente Supabase di prova. Non ha un
+ * valore predefinito: una password scritta nel repository sarebbe un segreto nel
+ * repository, e un ambiente di prova con credenziali note è un ambiente esposto.
+ */
+export const PASSWORD = (() => {
+  const v = process.env.E2E_PASSWORD
+  if (!v) throw new Error('E2E_PASSWORD non impostata: vedi playwright.config.ts.')
+  return v
+})()
 
 /** Entra davvero dal form di login e attende la dashboard. */
 export async function login(page: Page, email: string) {

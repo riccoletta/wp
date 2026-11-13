@@ -1,8 +1,8 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import type { MedicalRow } from '../lib/api'
+import { listMedical, type MedicalRow } from '../lib/data'
 import { Async, Button, Card, Table, useApi } from '../components/ui'
 import { MEDICAL_LABELS, formatDate } from '../lib/format'
-import { MedicalBadge } from './PersonDetail'
+import { MedicalBadge } from '../components/badges'
 
 const FILTERS = [
   { value: '', label: 'Tutti' },
@@ -13,7 +13,7 @@ const FILTERS = [
 export default function Medical() {
   const [params, setParams] = useSearchParams()
   const filter = params.get('filtro') ?? ''
-  const state = useApi<MedicalRow[]>(`/api/medical?filter=${filter}`)
+  const state = useApi<MedicalRow[]>(() => listMedical(filter), [filter])
 
   return (
     <>

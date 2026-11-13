@@ -1,33 +1,23 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiError, type Person, type Season } from '../lib/api'
+import {
+  errorMessage, addGuardian, createDue, deleteMedical, getPerson, invitePerson,
+  listSeasons, removeGuardian, saveMedical, saveRegistration, updatePerson,
+  type PersonDetail as Detail, type Role, type Season,
+} from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, useApi } from '../components/ui'
+import PersonPicker from '../components/PersonPicker'
+import { DueBadge, MedicalBadge, RegistrationBadge } from '../components/badges'
 import {
-  DUE_LABELS, KIND_LABELS, MEDICAL_LABELS, REGISTRATION_LABELS,
-  euro, formatDate, formatDateTime, isMinor, parseEuro, todayISO,
+  KIND_LABELS, MEDICAL_LABELS, REGISTRATION_LABELS,
+  euro, formatDate, formatDateTime, isMinor, parseEuro,
 } from '../lib/format'
-
-interface Detail extends Person {
-  teams: { id: string; name: string; category: string | null; season: string; seasonActive: boolean }[]
-  guardians: { id: string; firstName: string; lastName: string }[]
-  wards: { id: string; firstName: string; lastName: string }[]
-  account: { email: string; active: boolean } | null
-  registrations: {
-    id: string; seasonId: string; season: string; status: string
-    submittedOn: string | null; validUntil: string | null; notes: string | null
-  }[]
-  medical: { kind: string | null; expiresOn: string; updatedAt: string } | null
-  dues: {
-    id: string; description: string; amountCents: number; paidCents: number
-    remainingCents: number; status: string; dueDate: string | null; season: string
-  }[]
-}
 
 export default function PersonDetail() {
   const { id } = useParams<{ id: string }>()
   const { can } = useAuth()
-  const state = useApi<Detail>(`/api/people/${id}`)
+  const state = useApi<Detail>(() => getPerson(id!), [id])
   const [modal, setModal] = useState<null | 'anagrafica' | 'certificato' | 'tesseramento' | 'quota' | 'invito'>(null)
 
   return (
@@ -51,7 +41,7 @@ export default function PersonDetail() {
               <Button variant="ghost" onClick={() => setModal('anagrafica')}>Modifica</Button>
               <Button variant={p.archived ? 'ghost' : 'danger'}
                 onClick={async () => {
-                  await api.patch(`/api/people/${p.id}`, { archived: !p.archived })
+                  await updatePerson(p.id, { archived: !p.archived })
                   state.reload()
                 }}>
                 {p.archived ? 'Ripristina' : 'Archivia'}
@@ -204,25 +194,6 @@ const Info = ({ label, value }: { label: string; value: string }) => (
   </div>
 )
 
-export function MedicalBadge({ expiresOn }: { expiresOn: string }) {
-  const days = Math.round((Date.parse(expiresOn) - Date.parse(todayISO())) / 864e5)
-  if (days < 0) return <Badge tone="danger">Scaduto</Badge>
-  if (days <= 30) return <Badge tone="warn">In scadenza</Badge>
-  return <Badge tone="ok">Valido</Badge>
-}
-
-export const RegistrationBadge = ({ status }: { status: string }) => (
-  <Badge tone={status === 'attivo' ? 'ok' : status === 'scaduto' ? 'danger' : 'warn'}>
-    {REGISTRATION_LABELS[status] ?? status}
-  </Badge>
-)
-
-export const DueBadge = ({ status }: { status: string }) => (
-  <Badge tone={status === 'saldata' ? 'ok' : status === 'parziale' ? 'warn' : 'danger'}>
-    {DUE_LABELS[status] ?? status}
-  </Badge>
-)
-
 /** Il form anagrafica vive nella pagina elenco: lo riusiamo qui senza duplicarlo. */
 import { PersonForm } from './People'
 const PersonFormLazy = PersonForm
@@ -258,7 +229,7 @@ function Guardians({ person, onChange }: { person: Detail; onChange: () => void 
                 </Link>
                 {can('admin') && (
                   <Button variant="danger" onClick={async () => {
-                    await api.del(`/api/people/${person.id}/guardians/${g.id}`)
+                    await removeGuardian(person.id, g.id)
                     onChange()
                   }}>Scollega</Button>
                 )}
@@ -268,50 +239,14 @@ function Guardians({ person, onChange }: { person: Detail; onChange: () => void 
         )
       )}
       {adding && (
-        <GuardianPicker minorId={person.id} onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); onChange() }} />
+        <PersonPicker title="Collega un tutore" confirmLabel="Collega" exclude={[person.id]}
+          onClose={() => setAdding(false)}
+          onPick={async (guardianId) => {
+            await addGuardian(person.id, guardianId)
+            setAdding(false); onChange()
+          }} />
       )}
     </Card>
-  )
-}
-
-function GuardianPicker({ minorId, onClose, onSaved }: {
-  minorId: string; onClose: () => void; onSaved: () => void
-}) {
-  const people = useApi<Person[]>('/api/people')
-  const [selected, setSelected] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <Modal title="Collega un tutore" onClose={onClose}>
-      <Async state={people}>
-        {(list) => (
-          <form className="space-y-3" onSubmit={async (e) => {
-            e.preventDefault()
-            setError(null)
-            try {
-              await api.post(`/api/people/${minorId}/guardians`, { guardianPersonId: selected })
-              onSaved()
-            } catch (err) {
-              setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
-            }
-          }}>
-            <Field label="Persona">
-              <Select value={selected} required onChange={(e) => setSelected(e.target.value)}>
-                <option value="">Scegli…</option>
-                {list.filter((p) => p.id !== minorId).map((p) => (
-                  <option key={p.id} value={p.id}>{p.lastName} {p.firstName}</option>
-                ))}
-              </Select>
-            </Field>
-            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>Annulla</Button>
-              <Button type="submit" disabled={!selected}>Collega</Button>
-            </div>
-          </form>
-        )}
-      </Async>
-    </Modal>
   )
 }
 
@@ -325,10 +260,10 @@ function MedicalForm({ person, onClose, onSaved }: { person: Detail; onClose: ()
         e.preventDefault()
         setError(null)
         try {
-          await api.put(`/api/medical/${person.id}`, { expiresOn, kind: kind || null })
+          await saveMedical(person.id, expiresOn, kind || null)
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Data di scadenza">
@@ -348,7 +283,7 @@ function MedicalForm({ person, onClose, onSaved }: { person: Detail; onClose: ()
         <div className="flex justify-end gap-2">
           {person.medical && (
             <Button type="button" variant="danger" onClick={async () => {
-              await api.del(`/api/medical/${person.id}`); onSaved()
+              await deleteMedical(person.id); onSaved()
             }}>Rimuovi</Button>
           )}
           <Button type="button" variant="ghost" onClick={onClose}>Annulla</Button>
@@ -362,7 +297,7 @@ function MedicalForm({ person, onClose, onSaved }: { person: Detail; onClose: ()
 function RegistrationForm({ person, onClose, onSaved }: {
   person: Detail; onClose: () => void; onSaved: () => void
 }) {
-  const seasons = useApi<Season[]>('/api/seasons')
+  const seasons = useApi<Season[]>(listSeasons)
   const [form, setForm] = useState({ seasonId: '', status: 'in_corso', submittedOn: '', validUntil: '', notes: '' })
   const [error, setError] = useState<string | null>(null)
 
@@ -377,17 +312,17 @@ function RegistrationForm({ person, onClose, onSaved }: {
               e.preventDefault()
               setError(null)
               try {
-                await api.put('/api/registrations', {
+                await saveRegistration({
                   personId: person.id,
                   seasonId,
-                  status: form.status,
+                  status: form.status as Detail['registrations'][number]['status'],
                   submittedOn: form.submittedOn || null,
                   validUntil: form.validUntil || null,
                   notes: form.notes || null,
                 })
                 onSaved()
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+                setError(errorMessage(err))
               }
             }}>
               <Field label="Stagione">
@@ -435,7 +370,7 @@ function RegistrationForm({ person, onClose, onSaved }: {
 export function DueForm({ personId, onClose, onSaved }: {
   personId: string; onClose: () => void; onSaved: () => void
 }) {
-  const seasons = useApi<Season[]>('/api/seasons')
+  const seasons = useApi<Season[]>(listSeasons)
   const [form, setForm] = useState({ seasonId: '', description: '', amount: '', dueDate: '' })
   const [error, setError] = useState<string | null>(null)
 
@@ -451,13 +386,13 @@ export function DueForm({ personId, onClose, onSaved }: {
               const amountCents = parseEuro(form.amount)
               if (amountCents === null || amountCents <= 0) return setError('Importo non valido.')
               try {
-                await api.post('/api/dues', {
+                await createDue({
                   personId, seasonId, description: form.description, amountCents,
                   dueDate: form.dueDate || null,
                 })
                 onSaved()
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+                setError(errorMessage(err))
               }
             }}>
               <Field label="Stagione">
@@ -492,24 +427,31 @@ export function DueForm({ personId, onClose, onSaved }: {
   )
 }
 
+/**
+ * L'invito è un atto separato dall'anagrafica: la persona esiste già, qui le si apre
+ * un accesso. Lo manda Supabase Auth per email — nessun link da consegnare a mano,
+ * nessuna registrazione pubblica.
+ */
 function InviteForm({ person, onClose, onSaved }: { person: Detail; onClose: () => void; onSaved: () => void }) {
   const [email, setEmail] = useState(person.email ?? '')
-  const [roles, setRoles] = useState<string[]>(['athlete'])
-  const [link, setLink] = useState<string | null>(null)
+  const [roles, setRoles] = useState<Role[]>(['athlete'])
+  const [sent, setSent] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const toggle = (role: string) =>
+  const toggle = (role: Role) =>
     setRoles((r) => (r.includes(role) ? r.filter((x) => x !== role) : [...r, role]))
 
-  if (link) {
+  if (sent) {
     return (
-      <Modal title="Invito creato" onClose={() => { onSaved() }}>
+      <Modal title="Invito inviato" onClose={() => { onSaved() }}>
         <p className="text-sm text-slate-700">
-          Consegna questo link alla persona: serve una sola volta e scade tra 14 giorni.
+          Abbiamo mandato a <strong>{sent}</strong> un'email con il link per impostare la
+          password e attivare l'accesso. Il link scade: se non arriva o scade, l'invito
+          si può rifare da qui.
         </p>
-        <code className="mt-3 block overflow-x-auto rounded-lg bg-slate-100 p-3 text-xs">{link}</code>
         <div className="mt-4 flex justify-end">
-          <Button onClick={() => onSaved()}>Ho copiato il link</Button>
+          <Button onClick={() => onSaved()}>Chiudi</Button>
         </div>
       </Modal>
     )
@@ -519,13 +461,13 @@ function InviteForm({ person, onClose, onSaved }: { person: Detail; onClose: () 
     <Modal title="Genera invito" onClose={onClose}>
       <form className="space-y-3" onSubmit={async (e: FormEvent) => {
         e.preventDefault()
-        setError(null)
+        setBusy(true); setError(null)
         try {
-          const res = await api.post<{ token: string }>(`/api/people/${person.id}/invite`, { email, roles })
-          setLink(`${window.location.origin}/accedi?invito=${res.token}`)
+          await invitePerson(person.id, email, roles)
+          setSent(email)
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
-        }
+          setError(errorMessage(err))
+        } finally { setBusy(false) }
       }}>
         <Field label="Email di accesso">
           <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -533,10 +475,10 @@ function InviteForm({ person, onClose, onSaved }: { person: Detail; onClose: () 
         <fieldset>
           <legend className="mb-1 text-sm font-medium text-slate-700">Ruoli</legend>
           <div className="space-y-1">
-            {[['admin', 'Segreteria'], ['coach', 'Allenatore'], ['athlete', 'Atleta'], ['guardian', 'Tutore']]
-              .map(([value, label]) => (
+            {([['admin', 'Segreteria'], ['coach', 'Allenatore'], ['athlete', 'Atleta'],
+               ['guardian', 'Tutore']] as [Role, string][]).map(([value, label]) => (
                 <label key={value} className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={roles.includes(value!)} onChange={() => toggle(value!)}
+                  <input type="checkbox" checked={roles.includes(value)} onChange={() => toggle(value)}
                     className="size-4 rounded border-slate-300" />
                   {label}
                 </label>
@@ -546,7 +488,9 @@ function InviteForm({ person, onClose, onSaved }: { person: Detail; onClose: () 
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>Annulla</Button>
-          <Button type="submit" disabled={roles.length === 0}>Genera</Button>
+          <Button type="submit" disabled={busy || roles.length === 0}>
+            {busy ? 'Invio…' : 'Invia invito'}
+          </Button>
         </div>
       </form>
     </Modal>

@@ -1,12 +1,15 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { boot } from './helpers.js'
-import { asSystem } from '../src/db.js'
+import { asSystem, closeDb, initDb } from '../src/db.js'
 import { seedDemo } from '../src/fixtures.js'
 
-let env: Awaited<ReturnType<typeof boot>>
-before(async () => { env = await boot() })
-after(async () => { await env.close() })
+let data: Awaited<ReturnType<typeof seedDemo>>
+before(async () => {
+  process.env.DATABASE_URL = ''
+  await initDb({ memory: true })
+  data = await seedDemo()
+})
+after(async () => { await closeDb() })
 
 const count = (table: string) =>
   asSystem(async (tx) => Number((await tx.one<any>(`select count(*)::int as n from ${table}`))!.n))
@@ -31,21 +34,20 @@ describe('seed idempotente', () => {
     const before = await snapshot()
     const again = await seedDemo()
     assert.deepEqual(await snapshot(), before)
-    assert.equal(again.seasonId, env.data.seasonId)
+    assert.equal(again.seasonId, data.seasonId)
     assert.equal(await count('seasons where is_active'), 1)
   })
 
   it('preserva i dati modificati dalla segreteria invece di sovrascriverli', async () => {
-    const admin = await env.login('segreteria@example.test')
-    assert.equal((await admin.put('/api/registrations', {
-      personId: env.data.minor.personId, seasonId: env.data.seasonId, status: 'attivo',
-    })).status, 200)
+    await asSystem((tx) => tx.query(
+      `update registrations set status = 'attivo' where person_id = $1 and season_id = $2`,
+      [data.minor.personId, data.seasonId]))
 
     await seedDemo()
 
     const row = await asSystem((tx) => tx.one<any>(
       'select status from registrations where person_id = $1 and season_id = $2',
-      [env.data.minor.personId, env.data.seasonId]))
+      [data.minor.personId, data.seasonId]))
     assert.equal(row!.status, 'attivo')
   })
 

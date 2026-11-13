@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type Season, type Team } from '../lib/api'
+import { errorMessage, activateSeason, createSeason, createTeam, listSeasons, listTeams,
+  type Season, type Team } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, useApi } from '../components/ui'
 import { formatDate } from '../lib/format'
@@ -9,8 +10,8 @@ export default function Teams() {
   const { can } = useAuth()
   const [seasonId, setSeasonId] = useState('')
   const [modal, setModal] = useState<null | 'squadra' | 'stagione'>(null)
-  const seasons = useApi<Season[]>('/api/seasons')
-  const teams = useApi<Team[]>(`/api/teams?seasonId=${seasonId}`)
+  const seasons = useApi<Season[]>(listSeasons)
+  const teams = useApi<Team[]>(() => listTeams(seasonId), [seasonId])
 
   return (
     <>
@@ -44,7 +45,7 @@ export default function Teams() {
                     <Button variant="ghost" onClick={() => setSeasonId(s.id)}>Filtra squadre</Button>
                     {can('admin') && !s.isActive && (
                       <Button variant="ghost" onClick={async () => {
-                        await api.post(`/api/seasons/${s.id}/activate`)
+                        await activateSeason(s.id)
                         seasons.reload(); teams.reload()
                       }}>Rendi attiva</Button>
                     )}
@@ -100,10 +101,10 @@ function SeasonForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         setError(null)
         if (form.endDate <= form.startDate) return setError('La fine deve seguire l\'inizio.')
         try {
-          await api.post('/api/seasons', form)
+          await createSeason(form)
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Nome" hint="Es. 2025/2026">
@@ -150,10 +151,10 @@ function TeamForm({ seasons, onClose, onSaved }: {
         e.preventDefault()
         setError(null)
         try {
-          await api.post('/api/teams', { ...form, category: form.category || null })
+          await createTeam({ ...form, category: form.category || null })
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Stagione">

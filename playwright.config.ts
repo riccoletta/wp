@@ -2,11 +2,31 @@ import { defineConfig, devices } from '@playwright/test'
 
 /**
  * Giro di verifica dell'interfaccia in un browser vero: le pagine React vengono
- * cliccate, non solo compilate. Gira su un database PGlite dedicato (`db/e2e-data`)
- * ricreato e popolato da `npm run e2e`, quindi non tocca mai i dati di sviluppo.
+ * cliccate, non solo compilate.
+ *
+ * Non c'è più un'API da avviare: il frontend parla direttamente con Supabase.
+ * Le prove hanno quindi bisogno di un **ambiente Supabase dedicato** — mai quello
+ * di produzione, perché scrivono davvero — dichiarato nell'ambiente:
+ *
+ *   VITE_SUPABASE_URL              progetto di prova (o `supabase start` in locale)
+ *   VITE_SUPABASE_PUBLISHABLE_KEY  chiave pubblicabile dello stesso progetto
+ *   E2E_PASSWORD                   password degli account sintetici del seed
+ *   LICENSE_OWNER_TOKEN            token del proprietario, per la prova sulla licenza
+ *   E2E_LICENSE_FUNCTION_URL       URL della Edge Function `license-owner`
+ *
+ * Preparazione: `npm run migrate` e `npm run seed` su quel progetto, e gli account
+ * sintetici creati in Supabase Auth con la stessa email (vedi README).
  */
-const API_PORT = 3100
 const WEB_PORT = 5174
+
+const required = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY']
+const missing = required.filter((k) => !process.env[k])
+if (missing.length) {
+  throw new Error(
+    `Prove end-to-end non eseguibili: mancano ${missing.join(', ')}.\n`
+    + 'Servono le credenziali di un progetto Supabase DI PROVA, mai quello di produzione.',
+  )
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -24,17 +44,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: 'npm run start --workspace=server',
-      env: { PORT: String(API_PORT), PGLITE_DIR: './db/e2e-data', WEB_ORIGIN: `http://127.0.0.1:${WEB_PORT}`,
-        LICENSE_OWNER_TOKEN: process.env.LICENSE_OWNER_TOKEN || 'token-di-prova-e2e' },
-      // `/api/auth/me` risponde 401 da anonimo: basta a sapere che l'API è in ascolto.
-      url: `http://127.0.0.1:${API_PORT}/api/auth/me`,
-      reuseExistingServer: false,
-      timeout: 60_000,
-    },
-    {
       command: `npm run dev --workspace=web -- --port ${WEB_PORT} --strictPort --host 127.0.0.1`,
-      env: { API_URL: `http://127.0.0.1:${API_PORT}` },
       url: `http://127.0.0.1:${WEB_PORT}`,
       reuseExistingServer: false,
       timeout: 60_000,

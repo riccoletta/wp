@@ -216,6 +216,115 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
 
 ---
 
+## M9 — Migrazione all'architettura Supabase nativa [P0]
+
+Decisione architetturale definitiva: **React + Supabase Auth + Data API + Edge Functions**,
+niente Express, niente pool PostgreSQL proprio, niente cookie di sessione fatti in casa.
+I permessi restano dove stanno già (RLS), la FASE 1 non cambia di una funzione.
+Le migrazioni sono **additive**: il database esistente non si azzera, non si svuota, non si riscrive.
+
+### M9a — Identità Supabase e RLS per `authenticated` [P0]
+- [x] `0009_supabase_auth.sql`: `app_users.auth_user_id` (unico, verso `auth.users`), `app_uid()`
+  risolto da `auth.uid()` con ripiego su `app.user_id` solo per i ruoli non-Data-API (transizione).
+- [x] Policy esistenti estese al ruolo `authenticated`; `anon` resta senza alcun privilegio.
+- [x] `password_hash` non esce dalla Data API: GRANT per colonna su `app_users`.
+  `sessions`, `login_attempts`, `invites` restano fuori dalla Data API.
+- [x] `user_roles` in sola lettura per chiunque: nessun utente può assegnarsi un ruolo.
+- [x] Shim `auth.uid()` creato dalla migrazione stessa solo dove lo schema `auth` non esiste:
+  su Supabase è un no-op, fuori da Supabase rende le policy provabili con lo stesso SQL.
+
+### M9b — Licenza applicata dal database [P0]
+- [x] `app_license_readonly()` / `app_can_write()`: lo stato derivato della licenza entra nelle
+  policy di scrittura. Un utente autenticato che chiama la REST API direttamente non scrive lo stesso.
+- [x] Policy `for all` divise in `insert`/`update`/`delete`: la lettura non passa mai dal controllo licenza.
+- [x] Messaggio italiano della licenza propagato dal database al client.
+
+### M9c — Superficie dati: funzioni RPC e tabelle [P0]
+- [x] `0010_api_rpc.sql`: funzioni `api_*` SECURITY INVOKER (la RLS vale per chi chiama) per
+  letture composte (`me`, `dashboard`, dettaglio persona, dettaglio squadra, dettaglio quota)
+  e operazioni atomiche (attivazione stagione, upsert tesseramento/certificato, versamenti).
+- [x] CRUD semplice via Data API nativa (`.from()`), gated dalle stesse policy.
+
+### M9d — Frontend su `@supabase/supabase-js` [P0]
+- [x] Client unico tipizzato con `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`.
+  Nessuna credenziale PostgreSQL, nessun certificato nel frontend.
+- [x] Login, logout, sessione persistente, recupero password, rotte protette: Supabase Auth.
+- [x] Tutte le chiamate `/api/*` sostituite; UX, flussi FASE 1 e stati loading/vuoto/errore invariati.
+- [x] Messaggi d'errore in italiano, mappati dai codici PostgreSQL (`42501`, `23505`, …).
+
+### M9e — Operazioni privilegiate in Edge Function [P0]
+- [x] `license-owner`: rinnovo/sospensione/riattivazione, chiusa da `LICENSE_OWNER_TOKEN`
+  (segreto di Edge Function). L'admin del club non la apre.
+- [x] `club-invite`: la segreteria invita una persona dell'anagrafica; la funzione verifica
+  che il chiamante sia admin, crea l'utente in Supabase Auth e collega `auth_user_id` + ruoli.
+  Nessuna registrazione pubblica.
+- [x] Nessuna service key in Vite o nel repository.
+
+### M9f — Test e verifica [P0]
+- [x] Test di integrazione sulla RLS nuova (22 test, `server/test/supabase-rls.test.ts`): anonimo, admin, coach, atleta, tutore, scalata di ruolo,
+  isolamento dei dati finanziari dai coach, licenza scaduta che blocca la scrittura.
+- [ ] Playwright sui flussi FASE 1 con Supabase Auth. **Bloccato:** serve un progetto
+  Supabase di prova (URL + chiave pubblicabile). `playwright.config.ts` e le prove sono
+  pronte e si rifiutano di partire senza quelle variabili, invece di fingere un verde.
+- [x] `npm run check`, `npm test` (38 test), `npm run build`.
+
+### M9g — Rimozione dell'infrastruttura obsoleta [P0]
+- [x] Via Express, `api/index.mjs`, rotte, cookie di sessione, `scrypt`, CSRF e freno ai login
+  (ora è Supabase Auth a occuparsene). `pg` e PGlite restano solo negli strumenti del database.
+- [x] `vercel.json` ridotto a hosting statico; `.env.example`, README e deploy aggiornati.
+- [x] Piano di pulizia separato (qui sotto): **non** si cancella nulla in questa milestone.
+
+### M9h — Piano di pulizia del legacy [da rivedere a parte, NON eseguito]
+
+Niente di quanto segue è stato cancellato: le migrazioni di M9 sono additive e il
+database conserva tutto. Questo elenco è una proposta da approvare, non un lavoro fatto.
+
+1. **Dopo** che ogni utente esistente ha un `auth_user_id` e ha fatto almeno un accesso:
+   - `alter table app_users drop column password_hash;`
+   - `drop table sessions;` e `drop table login_attempts;` (sessioni e freno ai tentativi
+     sono di Supabase Auth);
+   - `drop table invites;` (gli inviti sono di Supabase Auth).
+2. **Dopo** aver verificato che nessuna connessione usa più i ruoli legacy:
+   - togliere `app_user` dalle clausole `to` di tutte le policy, poi `drop role app_user`;
+   - `drop role app_runtime` (serviva all'API Express);
+   - togliere il ripiego su `app.user_id` da `app_uid()`.
+3. Migrazioni `0005`–`0008`: restano in archivio come storia. Non si riscrivono.
+4. Nessun dato del club viene toccato in nessuno di questi passi.
+
+Ordine obbligato: prima 1, poi 2. Invertirlo toglierebbe l'accesso a chi non è ancora
+passato a Supabase Auth.
+
+### Blocchi aperti di M9
+
+- `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_SUPABASE_URL` del progetto `pnm`: non sono
+  ricavabili dalla sola `DATABASE_URL`. Senza, il frontend non si collega e le prove
+  Playwright non partono.
+- ~~Migrazioni `0009`–`0011` sul progetto Supabase reale~~ — **fatto il 2026-11-13**:
+  applicate con `npm run migrate` su `pnm` (PostgreSQL 17.11) e verificate con
+  `npm run db:verify`, 16 verifiche su 16. Chiave esterna `app_users → auth.users`
+  creata, `auth.users` leggibile dal ruolo delle migrazioni, 0 identità registrate.
+- Distribuzione delle Edge Function: serve la Supabase CLI autenticata (non installata
+  in questo ambiente).
+- Redirect URL di Supabase Auth sul dominio Vercel reale.
+
+### M9i — Audit di qualità e snellimento [fatto, ramo `supabase-native-slim`]
+
+- [x] Baseline misurata (LOC per area, bundle, test) e rilievi in `CODE_AUDIT.md`.
+- [x] P0: via il codice morto — `deleteDue`/`deleteTeam`, `Driver.exec`, il ramo
+  serverless del pool `pg` (non esiste più nessun runtime serverless).
+- [x] P0: `GuardianPicker` e `PersonPicker` erano lo stesso componente scritto due
+  volte: ora è uno solo, in `components/PersonPicker.tsx`.
+- [x] P0/P1: helper delle prove condivisi; `errorMessage(err)` al posto di 12 copie
+  della stessa riga; badge di stato fuori da `PersonDetail.tsx`.
+- [x] Copertura: `bootstrapAdmin` era rimasto senza prove dopo M9 — 6 test nuovi sul
+  percorso che crea il primo amministratore. Suite da 38 a 44.
+- [x] Nessuna modifica a SQL, RLS, Edge Function o calcoli economici. Nessun test
+  rimosso o indebolito: `denied()` nelle prove è stata ristretta, non allargata.
+- [ ] **Da approvare** (in `CODE_AUDIT.md`): doppia chiamata `api_me()` alla login,
+  rimozione del client Realtime dal bundle, code splitting delle rotte.
+
+---
+
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
 
 ### M6 — Piscine e spazi [P2]
@@ -303,6 +412,33 @@ Un atleta può esistere in anagrafica **senza account**. Gli accessi sono su inv
   riusata (il vincolo `seasons_single_active_idx` ammette una sola riga `is_active`); persone e account
   si riconoscono da email o nome+data di nascita; gli stati amministrativi già modificati dalla segreteria
   non vengono sovrascritti. Tutto in un'unica transazione: un errore a metà non lascia dati parziali.
+- D21 — **Supabase non è più solo il database (D16 superata).** Autenticazione, API e
+  funzioni privilegiate sono di Supabase; Express, il pool `pg`, i cookie di sessione e
+  `scrypt` spariscono. D8 cade, D9 no: i permessi restano una cosa sola, le policy RLS.
+  Cambia da dove arriva l'identità (`auth.uid()` invece di `app.user_id`) e quale ruolo
+  interroga il database (`authenticated` invece di `app_user`), non chi decide.
+- D22 — **Gli id applicativi non si buttano.** `app_users.auth_user_id` mappa l'identità
+  Supabase sull'utente che c'era già: persone, ruoli, legami tutore/minore, tesseramenti e
+  quote conservano le loro chiavi. Gli hash `scrypt` non vengono copiati in Supabase Auth
+  (sarebbe riuso di credenziali in un sistema che non le ha mai viste): ogni utente passa
+  da invito o recupero password.
+- D23 — **La licenza è un vincolo del database.** `app_can_write()` entra nelle policy di
+  scrittura di tutte le tabelle del club. Con PostgREST il client parla direttamente con il
+  database: un controllo in React sarebbe un suggerimento, non una regola. Le policy `for
+  all` sono state divise in `insert`/`update`/`delete` perché la clausola `using` di una
+  `for all` vale anche per la `select`: metterci la licenza avrebbe *nascosto* i dati invece
+  di impedirne la modifica, e la sola lettura deve restare lettura piena (D13).
+- D24 — **La superficie della Data API è decisa dai GRANT, non dall'abitudine.** `EXECUTE`
+  è revocato a `PUBLIC` e riconcesso per nome, `password_hash` è escluso con un GRANT per
+  colonna, `user_roles` è in sola lettura per chiunque, `sessions`/`login_attempts`/`invites`
+  non sono esposti e `anon` non ha nemmeno `usage` sullo schema. Le letture composte e le
+  operazioni atomiche passano da funzioni `api_*` SECURITY **INVOKER**: la RLS vale per chi
+  chiama, quindi una funzione non può diventare una scorciatoia attorno alle policy.
+- D25 — **Le operazioni privilegiate stanno in Edge Function, non nel browser.** Invitare
+  (creare un'identità, assegnare ruoli) e gestire la licenza richiedono la chiave di
+  servizio, che scavalca la RLS: nel frontend entrano solo l'URL del progetto e la chiave
+  pubblicabile. `club-invite` verifica da sé che il chiamante sia admin secondo il database;
+  `license-owner` resta fuori dalla catena delle sessioni, come da D12.
 
 ## Registro progressi
 `2026-11-11 | M0–M5 | FASE 1 implementata: auth+inviti, persone/ruoli/tutori, stagioni/squadre/roster,
@@ -363,3 +499,47 @@ reale resta da eseguire`
   dimostrativo resta vietato in produzione. `npm run admin:bootstrap` gira dalla connessione del
   ruolo proprietario, chiede la password a schermo spento e non sovrascrive mai un amministratore
   esistente: gli account successivi si creano per invito, dalla segreteria.
+
+`2026-11-13 | M9a-M9g | Migrazione all'architettura Supabase nativa: via Express, il pool
+`pg` di runtime, i cookie di sessione, `scrypt`, CSRF e il freno ai login (ora è Supabase
+Auth a occuparsene) e la funzione serverless `api/index.mjs`. Migrazioni additive
+`0009_supabase_auth.sql` (identità da `auth.uid()`, policy estese ad `authenticated`,
+scritture divise per comando, licenza nelle policy, GRANT minimi ed espliciti),
+`0010_api_rpc.sql` (26 funzioni `api_*` SECURITY INVOKER) e `0011` (password_hash
+nullable, EXECUTE per `service_role`). Frontend su `@supabase/supabase-js`:
+`web/src/lib/supabase.ts`, `web/src/lib/data.ts` al posto di `lib/api.ts`, `lib/auth.tsx`
+su Supabase Auth con recupero password, `Login.tsx` con invito e recupero. Edge Function
+`club-invite` e `license-owner`. `server/` diventa la cassetta degli attrezzi del
+database: migrazioni, seed, `db:verify` riscritta per la Data API, bootstrap del primo
+amministratore collegato a un'identità Supabase | npm run check (pulito), npm test (38/38:
+22 sulle policy della Data API eseguite come ruolo `authenticated` con i claim del JWT,
+13 sui flussi FASE 1, 3 sull'idempotenza del seed), npm run build (ok), migrazioni
+0001→0011 applicate da zero su un database isolato | prossimo: applicare 0009-0011 al
+progetto Supabase reale e distribuire le Edge Function | BLOCKER: mancano
+`VITE_SUPABASE_PUBLISHABLE_KEY`, la Supabase CLI autenticata e l'approvazione per il
+cambio di schema in produzione (vedi "Blocchi aperti di M9")`
+
+`2026-11-13 | M9 su Supabase reale | Migrazioni 0009-0011 applicate al progetto `pnm`
+(PostgreSQL 17.11) con `npm run migrate`: additive, nessun dato toccato, database privo di
+righe del club prima e dopo | `npm run db:verify` sul progetto reale: 16 verifiche su 16 —
+anonimo respinto su tabelle e RPC (42501), identità risolta da auth.uid(), `sessions`,
+`login_attempts`, `invites` e `password_hash` irraggiungibili dalla Data API, licenza non
+scrivibile e ruoli non assegnabili da sé, 32 funzioni `api_*` presenti, nessun privilegio
+di tabella per `anon`, chiave esterna `app_users → auth.users` creata, `auth.users`
+leggibile dal ruolo delle migrazioni (0 identità registrate) | prossimo: VITE_* in .env e
+su Vercel, poi primo amministratore e distribuzione delle Edge Function | BLOCKER:
+`VITE_SUPABASE_PUBLISHABLE_KEY` e Supabase CLI, a carico dell'utente`
+
+`2026-11-13 | M9i | Audit di qualità, semplificazione e peso del codice su ramo
+`supabase-native-slim`, derivato da `supabase-native`. Tolti: wrapper RPC mai chiamati
+(`deleteDue`, `deleteTeam`), `Driver.exec` mai invocata, il ramo serverless del pool `pg`
+e la variabile `DATABASE_POOL_IDLE_MS`, il duplicato `GuardianPicker` (ora un solo
+`PersonPicker` condiviso), gli helper di prova copiati in due file e 12 copie della stessa
+riga di gestione errore (`errorMessage`). Badge di stato spostati da `PersonDetail.tsx` a
+`components/badges.tsx`: quattro pagine non dipendono più da un modulo di 500 righe.
+Aggiunti 6 test su `bootstrapAdmin`, rimasto scoperto dopo M9 | npm run check (pulito),
+npm test 44/44 (erano 38), npm run build ok, bundle 456,95 → 455,62 kB (gzip 127,88 →
+127,81), frontend 2 547 → 2 540 righe | il codice era già magro: le due riduzioni grosse
+possibili (riscrittura SQL e rimozione del client Realtime) sono bloccate, la prima perché
+le migrazioni sono già applicate a `pnm`, la seconda perché tocca l'autenticazione |
+prossimo: approvare le tre proposte residue in `CODE_AUDIT.md` | nessun blocker nuovo`

@@ -1,15 +1,15 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import type { Registration, Season } from '../lib/api'
+import { listRegistrations, listSeasons, type Registration, type Season } from '../lib/data'
 import { Async, Card, Field, Select, Table, useApi } from '../components/ui'
 import { REGISTRATION_LABELS, formatDate } from '../lib/format'
-import { RegistrationBadge } from './PersonDetail'
+import { RegistrationBadge } from '../components/badges'
 
 export default function Registrations() {
   const [params, setParams] = useSearchParams()
   const status = params.get('stato') ?? ''
   const seasonId = params.get('stagione') ?? ''
-  const seasons = useApi<Season[]>('/api/seasons')
-  const state = useApi<Registration[]>(`/api/registrations?status=${status}&seasonId=${seasonId}`)
+  const seasons = useApi<Season[]>(listSeasons)
+  const state = useApi<Registration[]>(() => listRegistrations(seasonId, status), [seasonId, status])
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params)

@@ -1,28 +1,17 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiError, type Person } from '../lib/api'
+import { addTeamCoach, addTeamMember, getTeam, removeTeamCoach, removeTeamMember,
+  type TeamDetail as TeamDetailData } from '../lib/data'
 import { useAuth } from '../lib/auth'
-import { Async, Badge, Button, Card, Field, Modal, Select, Table, useApi } from '../components/ui'
+import { Async, Badge, Button, Card, Table, useApi } from '../components/ui'
+import PersonPicker from '../components/PersonPicker'
 import { formatDate } from '../lib/format'
-import { MedicalBadge } from './PersonDetail'
-
-interface TeamDetailData {
-  id: string
-  name: string
-  category: string | null
-  season: string
-  seasonActive: boolean
-  roster: {
-    id: string; firstName: string; lastName: string; birthDate: string | null
-    medicalExpiresOn: string | null
-  }[]
-  coaches: { id: string; firstName: string; lastName: string }[]
-}
+import { MedicalBadge } from '../components/badges'
 
 export default function TeamDetail() {
   const { id } = useParams<{ id: string }>()
   const { can } = useAuth()
-  const state = useApi<TeamDetailData>(`/api/teams/${id}`)
+  const state = useApi<TeamDetailData>(() => getTeam(id!), [id])
   const [picker, setPicker] = useState<null | 'atleta' | 'allenatore'>(null)
 
   return (
@@ -55,7 +44,7 @@ export default function TeamDetail() {
                     </Link>
                     {can('admin') && (
                       <Button variant="danger" onClick={async () => {
-                        await api.del(`/api/teams/${team.id}/coaches/${c.id}`); state.reload()
+                        await removeTeamCoach(team.id, c.id); state.reload()
                       }}>Rimuovi</Button>
                     )}
                   </li>
@@ -90,7 +79,7 @@ export default function TeamDetail() {
                     <td className="px-2 py-2 text-right">
                       {can('admin') && (
                         <Button variant="danger" onClick={async () => {
-                          await api.del(`/api/teams/${team.id}/members/${p.id}`); state.reload()
+                          await removeTeamMember(team.id, p.id); state.reload()
                         }}>Togli</Button>
                       )}
                     </td>
@@ -106,7 +95,7 @@ export default function TeamDetail() {
               exclude={picker === 'atleta' ? team.roster.map((r) => r.id) : team.coaches.map((c) => c.id)}
               onClose={() => setPicker(null)}
               onPick={async (personId) => {
-                await api.post(`/api/teams/${team.id}/${picker === 'atleta' ? 'members' : 'coaches'}`, { personId })
+                await (picker === 'atleta' ? addTeamMember : addTeamCoach)(team.id, personId)
                 setPicker(null); state.reload()
               }}
             />
@@ -114,48 +103,5 @@ export default function TeamDetail() {
         </>
       )}
     </Async>
-  )
-}
-
-function PersonPicker({ title, exclude, onClose, onPick }: {
-  title: string; exclude: string[]; onClose: () => void; onPick: (personId: string) => Promise<void>
-}) {
-  const people = useApi<Person[]>('/api/people')
-  const [selected, setSelected] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <Modal title={title} onClose={onClose}>
-      <Async state={people} empty={{ title: 'Nessuna persona disponibile.' }}>
-        {(list) => {
-          const options = list.filter((p) => !exclude.includes(p.id))
-          return (
-            <form className="space-y-3" onSubmit={async (e) => {
-              e.preventDefault()
-              setError(null)
-              try { await onPick(selected) } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
-              }
-            }}>
-              <Field label="Persona">
-                <Select value={selected} required onChange={(e) => setSelected(e.target.value)}>
-                  <option value="">Scegli…</option>
-                  {options.map((p) => (
-                    <option key={p.id} value={p.id}>{p.lastName} {p.firstName}</option>
-                  ))}
-                </Select>
-              </Field>
-              {options.length === 0 && (
-                <p className="text-sm text-slate-600">Tutte le persone disponibili sono già assegnate.</p>
-              )}
-              {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" onClick={onClose}>Annulla</Button>
-                <Button type="submit" disabled={!selected}>Conferma</Button>
-              </div>
-            </form>
-          )
-        }}
-      </Async>
-    </Modal>
   )
 }

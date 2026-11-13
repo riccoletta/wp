@@ -4,15 +4,18 @@ import { ACCOUNTS, login } from './helpers'
 /**
  * La licenza vista dall'interfaccia: sospensione → fascia di sola lettura e
  * scrittura respinta in italiano; riattivazione → tutto torna, dati intatti.
- * Il canale del proprietario è fuori dalla sessione del club, quindi qui lo si
- * chiama con il token di servizio, non cliccando.
+ * Il canale del proprietario è fuori dalla sessione del club: qui si chiama la
+ * Edge Function `license-owner` con il token di servizio, non cliccando.
  */
-const OWNER = 'http://127.0.0.1:3100/api/owner/license'
-const TOKEN = process.env.LICENSE_OWNER_TOKEN || 'token-di-prova-e2e'
+const OWNER = process.env.E2E_LICENSE_FUNCTION_URL
+  ?? `${process.env.VITE_SUPABASE_URL ?? ''}/functions/v1/license-owner`
+const TOKEN = process.env.LICENSE_OWNER_TOKEN
+
+test.skip(!TOKEN, 'LICENSE_OWNER_TOKEN non impostato: il canale del proprietario è chiuso.')
 
 async function owner(action: 'suspend' | 'reactivate') {
-  const api = await request.newContext({ extraHTTPHeaders: { 'x-license-token': TOKEN } })
-  const res = await api.post(`${OWNER}/${action}`, { data: {} })
+  const api = await request.newContext({ extraHTTPHeaders: { 'x-license-token': TOKEN! } })
+  const res = await api.post(OWNER, { data: { action } })
   expect(res.ok(), await res.text()).toBeTruthy()
   await api.dispose()
 }
