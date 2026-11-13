@@ -1,9 +1,9 @@
 import { useApi } from './ui'
-import type { License } from '../lib/api'
+import { getLicense, type License } from '../lib/data'
 
 /**
  * Avviso sullo stato della licenza. È solo informativo: il blocco delle scritture
- * lo applica il server, non questa fascia.
+ * lo applica il database con le policy di scrittura, non questa fascia.
  */
 const tones: Record<string, string> = {
   in_scadenza: 'border-amber-300 bg-amber-50 text-amber-900',
@@ -13,7 +13,7 @@ const tones: Record<string, string> = {
 }
 
 export default function LicenseBanner() {
-  const { data } = useApi<License>('/api/license')
+  const { data } = useApi<License>(getLicense)
   if (!data?.message) return null
   return (
     <div role="status" aria-live="polite"

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api, ApiError, type Due, type Payment, type Season } from '../lib/api'
+import { ApiError, addPayment, deletePayment, getDue, listDues, listSeasons,
+  type Due, type DueDetail as DueDetailData, type Season } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'
 import { DUE_LABELS, euro, formatDate, parseEuro, todayISO } from '../lib/format'
@@ -12,8 +13,8 @@ export default function Dues() {
   const status = params.get('stato') ?? ''
   const seasonId = params.get('stagione') ?? ''
   const openDue = params.get('quota')
-  const seasons = useApi<Season[]>('/api/seasons')
-  const state = useApi<Due[]>(`/api/dues?status=${status}&seasonId=${seasonId}`)
+  const seasons = useApi<Season[]>(listSeasons)
+  const state = useApi<Due[]>(() => listDues(seasonId, status), [seasonId, status])
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params)
@@ -99,11 +100,9 @@ export default function Dues() {
   )
 }
 
-interface DueDetailData extends Due { payments: Payment[] }
-
 function DueDetail({ id, onClose, onChange }: { id: string; onClose: () => void; onChange: () => void }) {
   const { can } = useAuth()
-  const state = useApi<DueDetailData>(`/api/dues/${id}`)
+  const state = useApi<DueDetailData>(() => getDue(id), [id])
   const [adding, setAdding] = useState(false)
 
   return (
@@ -141,7 +140,7 @@ function DueDetail({ id, onClose, onChange }: { id: string; onClose: () => void;
                     </div>
                     {can('admin') && (
                       <Button variant="danger" onClick={async () => {
-                        await api.del(`/api/dues/${d.id}/payments/${p.id}`)
+                        await deletePayment(d.id, p.id)
                         state.reload(); onChange()
                       }}>Elimina</Button>
                     )}
@@ -184,7 +183,7 @@ function PaymentForm({ dueId, suggested, onCancel, onSaved }: {
     if (amountCents > suggested) return setError(`Il residuo è ${euro(suggested)}.`)
     setBusy(true); setError(null)
     try {
-      await api.post(`/api/dues/${dueId}/payments`, { amountCents, paidOn, method, note: note || null })
+      await addPayment(dueId, { amountCents, paidOn, method: method as any, note: note || null })
       onSaved()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')

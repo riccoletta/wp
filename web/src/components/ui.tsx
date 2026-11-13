@@ -1,6 +1,6 @@
 import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react'
 import { useEffect, useState } from 'react'
-import { api, ApiError } from '../lib/api'
+import { ApiError } from '../lib/data'
 
 export function Button({
   variant = 'primary', className = '', ...props
@@ -120,24 +120,27 @@ export interface AsyncState<T> {
   reload: () => void
 }
 
-/** Carica dati dall'API e riespone sempre stato di caricamento, errore e ricarica. */
-export function useApi<T>(path: string | null, deps: unknown[] = []): AsyncState<T> {
+/**
+ * Carica dati da Supabase e riespone sempre stato di caricamento, errore e ricarica.
+ * `load` viene rieseguita quando cambia una delle `deps`; `null` significa "non caricare".
+ */
+export function useApi<T>(load: (() => Promise<T>) | null, deps: unknown[] = []): AsyncState<T> {
   const [data, setData] = useState<T | undefined>(undefined)
-  const [loading, setLoading] = useState(path !== null)
+  const [loading, setLoading] = useState(load !== null)
   const [error, setError] = useState<unknown>(null)
   const [nonce, setNonce] = useState(0)
 
   useEffect(() => {
-    if (path === null) { setLoading(false); return }
+    if (load === null) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
-    api.get<T>(path)
+    load()
       .then((d) => { if (!cancelled) { setData(d); setError(null) } })
       .catch((e) => { if (!cancelled) setError(e) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, nonce, ...deps])
+  }, [nonce, ...deps])
 
   return { data, loading, error, reload: () => setNonce((n) => n + 1) }
 }

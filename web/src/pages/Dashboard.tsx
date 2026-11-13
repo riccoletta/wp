@@ -1,25 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useApi, Async, Card, Badge } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { getDashboard, type DashboardData } from '../lib/data'
 import { euro, formatDate } from '../lib/format'
-
-interface DashboardData {
-  roles: string[]
-  season: { id: string; name: string; startDate: string; endDate: string } | null
-  teams: { id: string; name: string; category: string | null; rosterSize: number }[]
-  counts: {
-    medicalExpired: number
-    medicalSoon: number
-    peopleActive: number
-    duesOpen: number
-    duesRemainingCents: number
-    registrationsPending: number
-  }
-}
 
 export default function Dashboard() {
   const { me, can } = useAuth()
-  const state = useApi<DashboardData>('/api/dashboard')
+  const state = useApi<DashboardData>(getDashboard)
 
   return (
     <>

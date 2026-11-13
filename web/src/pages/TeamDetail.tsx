@@ -1,28 +1,16 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiError, type Person } from '../lib/api'
+import { ApiError, addTeamCoach, addTeamMember, getTeam, listPeople, removeTeamCoach,
+  removeTeamMember, type Person, type TeamDetail as TeamDetailData } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Modal, Select, Table, useApi } from '../components/ui'
 import { formatDate } from '../lib/format'
 import { MedicalBadge } from './PersonDetail'
 
-interface TeamDetailData {
-  id: string
-  name: string
-  category: string | null
-  season: string
-  seasonActive: boolean
-  roster: {
-    id: string; firstName: string; lastName: string; birthDate: string | null
-    medicalExpiresOn: string | null
-  }[]
-  coaches: { id: string; firstName: string; lastName: string }[]
-}
-
 export default function TeamDetail() {
   const { id } = useParams<{ id: string }>()
   const { can } = useAuth()
-  const state = useApi<TeamDetailData>(`/api/teams/${id}`)
+  const state = useApi<TeamDetailData>(() => getTeam(id!), [id])
   const [picker, setPicker] = useState<null | 'atleta' | 'allenatore'>(null)
 
   return (
@@ -55,7 +43,7 @@ export default function TeamDetail() {
                     </Link>
                     {can('admin') && (
                       <Button variant="danger" onClick={async () => {
-                        await api.del(`/api/teams/${team.id}/coaches/${c.id}`); state.reload()
+                        await removeTeamCoach(team.id, c.id); state.reload()
                       }}>Rimuovi</Button>
                     )}
                   </li>
@@ -90,7 +78,7 @@ export default function TeamDetail() {
                     <td className="px-2 py-2 text-right">
                       {can('admin') && (
                         <Button variant="danger" onClick={async () => {
-                          await api.del(`/api/teams/${team.id}/members/${p.id}`); state.reload()
+                          await removeTeamMember(team.id, p.id); state.reload()
                         }}>Togli</Button>
                       )}
                     </td>
@@ -106,7 +94,7 @@ export default function TeamDetail() {
               exclude={picker === 'atleta' ? team.roster.map((r) => r.id) : team.coaches.map((c) => c.id)}
               onClose={() => setPicker(null)}
               onPick={async (personId) => {
-                await api.post(`/api/teams/${team.id}/${picker === 'atleta' ? 'members' : 'coaches'}`, { personId })
+                await (picker === 'atleta' ? addTeamMember : addTeamCoach)(team.id, personId)
                 setPicker(null); state.reload()
               }}
             />
@@ -120,7 +108,7 @@ export default function TeamDetail() {
 function PersonPicker({ title, exclude, onClose, onPick }: {
   title: string; exclude: string[]; onClose: () => void; onPick: (personId: string) => Promise<void>
 }) {
-  const people = useApi<Person[]>('/api/people')
+  const people = useApi<Person[]>(() => listPeople())
   const [selected, setSelected] = useState('')
   const [error, setError] = useState<string | null>(null)
   return (

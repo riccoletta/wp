@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import type { Role } from '../lib/api'
+import type { Role } from '../lib/data'
 import { Button } from './ui'
 import LicenseBanner from './LicenseBanner'
 

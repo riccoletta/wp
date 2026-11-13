@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type Person } from '../lib/api'
+import { ApiError, createPerson, listPeople, updatePerson, type Person } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'
 import { KIND_LABELS, formatDate, isMinor } from '../lib/format'
@@ -11,8 +11,7 @@ export default function People() {
   const [kind, setKind] = useState('')
   const [archived, setArchived] = useState(false)
   const [creating, setCreating] = useState(false)
-  const path = `/api/people?q=${encodeURIComponent(q)}&kind=${kind}&archived=${archived}`
-  const state = useApi<Person[]>(path)
+  const state = useApi<Person[]>(() => listPeople(q, kind, archived), [q, kind, archived])
 
   return (
     <>
@@ -98,6 +97,15 @@ export function PersonForm({ person, onClose, onSaved }: {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setError(null); setFieldErrors({})
+    // Le regole di forma (campi obbligatori, formati) stanno nel database come
+    // vincoli: qui restano i due controlli che servono a dare un messaggio al campo
+    // giusto prima ancora di partire.
+    const mancanti: Record<string, string[]> = {}
+    if (!form.firstName.trim()) mancanti.firstName = ['Nome obbligatorio']
+    if (!form.lastName.trim()) mancanti.lastName = ['Cognome obbligatorio']
+    if (Object.keys(mancanti).length) {
+      setFieldErrors(mancanti); setBusy(false); return
+    }
     const payload = {
       ...form,
       birthDate: form.birthDate || null,
@@ -105,14 +113,11 @@ export function PersonForm({ person, onClose, onSaved }: {
       phone: form.phone || null,
     }
     try {
-      if (person) await api.patch(`/api/people/${person.id}`, payload)
-      else await api.post('/api/people', payload)
+      if (person) await updatePerson(person.id, payload as any)
+      else await createPerson(payload as any)
       onSaved()
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-        setFieldErrors(err.details ?? {})
-      } else setError('Server non raggiungibile.')
+      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
       setBusy(false)
     }
   }

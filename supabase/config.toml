@@ -1,0 +1,12 @@
+project_id = "pallanuoto"
+
+[functions.club-invite]
+# Invita solo la segreteria: il JWT del chiamante serve, e la funzione verifica
+# da sé che corrisponda a un utente applicativo con ruolo admin.
+verify_jwt = true
+
+[functions.license-owner]
+# Il proprietario del software non è un utente del club e non ha un JWT Supabase:
+# l'unica chiave è il token di servizio nell'intestazione `x-license-token`,
+# controllato dentro la funzione. Nessun endpoint amministrativo resta scoperto.
+verify_jwt = false
