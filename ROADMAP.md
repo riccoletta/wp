@@ -307,6 +307,22 @@ passato a Supabase Auth.
   in questo ambiente).
 - Redirect URL di Supabase Auth sul dominio Vercel reale.
 
+### M9i — Audit di qualità e snellimento [fatto, ramo `supabase-native-slim`]
+
+- [x] Baseline misurata (LOC per area, bundle, test) e rilievi in `CODE_AUDIT.md`.
+- [x] P0: via il codice morto — `deleteDue`/`deleteTeam`, `Driver.exec`, il ramo
+  serverless del pool `pg` (non esiste più nessun runtime serverless).
+- [x] P0: `GuardianPicker` e `PersonPicker` erano lo stesso componente scritto due
+  volte: ora è uno solo, in `components/PersonPicker.tsx`.
+- [x] P0/P1: helper delle prove condivisi; `errorMessage(err)` al posto di 12 copie
+  della stessa riga; badge di stato fuori da `PersonDetail.tsx`.
+- [x] Copertura: `bootstrapAdmin` era rimasto senza prove dopo M9 — 6 test nuovi sul
+  percorso che crea il primo amministratore. Suite da 38 a 44.
+- [x] Nessuna modifica a SQL, RLS, Edge Function o calcoli economici. Nessun test
+  rimosso o indebolito: `denied()` nelle prove è stata ristretta, non allargata.
+- [ ] **Da approvare** (in `CODE_AUDIT.md`): doppia chiamata `api_me()` alla login,
+  rimozione del client Realtime dal bundle, code splitting delle rotte.
+
 ---
 
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
@@ -513,3 +529,17 @@ di tabella per `anon`, chiave esterna `app_users → auth.users` creata, `auth.u
 leggibile dal ruolo delle migrazioni (0 identità registrate) | prossimo: VITE_* in .env e
 su Vercel, poi primo amministratore e distribuzione delle Edge Function | BLOCKER:
 `VITE_SUPABASE_PUBLISHABLE_KEY` e Supabase CLI, a carico dell'utente`
+
+`2026-11-13 | M9i | Audit di qualità, semplificazione e peso del codice su ramo
+`supabase-native-slim`, derivato da `supabase-native`. Tolti: wrapper RPC mai chiamati
+(`deleteDue`, `deleteTeam`), `Driver.exec` mai invocata, il ramo serverless del pool `pg`
+e la variabile `DATABASE_POOL_IDLE_MS`, il duplicato `GuardianPicker` (ora un solo
+`PersonPicker` condiviso), gli helper di prova copiati in due file e 12 copie della stessa
+riga di gestione errore (`errorMessage`). Badge di stato spostati da `PersonDetail.tsx` a
+`components/badges.tsx`: quattro pagine non dipendono più da un modulo di 500 righe.
+Aggiunti 6 test su `bootstrapAdmin`, rimasto scoperto dopo M9 | npm run check (pulito),
+npm test 44/44 (erano 38), npm run build ok, bundle 456,95 → 455,62 kB (gzip 127,88 →
+127,81), frontend 2 547 → 2 540 righe | il codice era già magro: le due riduzioni grosse
+possibili (riscrittura SQL e rimozione del client Realtime) sono bloccate, la prima perché
+le migrazioni sono già applicate a `pnm`, la seconda perché tocca l'autenticazione |
+prossimo: approvare le tre proposte residue in `CODE_AUDIT.md` | nessun blocker nuovo`
