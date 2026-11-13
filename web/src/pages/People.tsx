@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ApiError, createPerson, listPeople, updatePerson, type Person } from '../lib/data'
+import { errorMessage, createPerson, listPeople, updatePerson, type Person } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'
 import { KIND_LABELS, formatDate, isMinor } from '../lib/format'
@@ -117,7 +117,7 @@ export function PersonForm({ person, onClose, onSaved }: {
       else await createPerson(payload as any)
       onSaved()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+      setError(errorMessage(err))
       setBusy(false)
     }
   }

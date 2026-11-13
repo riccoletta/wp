@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  ApiError, addGuardian, createDue, deleteMedical, getPerson, invitePerson,
+  errorMessage, addGuardian, createDue, deleteMedical, getPerson, invitePerson,
   listSeasons, removeGuardian, saveMedical, saveRegistration, updatePerson,
   type PersonDetail as Detail, type Role, type Season,
 } from '../lib/data'
@@ -281,7 +281,7 @@ function MedicalForm({ person, onClose, onSaved }: { person: Detail; onClose: ()
           await saveMedical(person.id, expiresOn, kind || null)
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Data di scadenza">
@@ -340,7 +340,7 @@ function RegistrationForm({ person, onClose, onSaved }: {
                 })
                 onSaved()
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+                setError(errorMessage(err))
               }
             }}>
               <Field label="Stagione">
@@ -410,7 +410,7 @@ export function DueForm({ personId, onClose, onSaved }: {
                 })
                 onSaved()
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+                setError(errorMessage(err))
               }
             }}>
               <Field label="Stagione">
@@ -484,7 +484,7 @@ function InviteForm({ person, onClose, onSaved }: { person: Detail; onClose: () 
           await invitePerson(person.id, email, roles)
           setSent(email)
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         } finally { setBusy(false) }
       }}>
         <Field label="Email di accesso">

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ApiError, listPeople, type Person } from '../lib/data'
+import { errorMessage, listPeople, type Person } from '../lib/data'
 import { Async, Button, Field, Modal, Select, useApi } from './ui'
 
 /**
@@ -28,7 +28,7 @@ export default function PersonPicker({ title, exclude = [], confirmLabel = 'Conf
               e.preventDefault()
               setError(null)
               try { await onPick(selected) } catch (err) {
-                setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+                setError(errorMessage(err))
               }
             }}>
               <Field label="Persona">

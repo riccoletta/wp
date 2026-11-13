@@ -31,6 +31,14 @@ function toApiError(err: PostgrestError): ApiError {
   }
 }
 
+/**
+ * Messaggio da mostrare all'utente. Gli errori che il database sa spiegare (permessi,
+ * licenza, vincoli) arrivano già in italiano da `toApiError`; tutto il resto è una rete
+ * che non si è potuta raggiungere.
+ */
+export const errorMessage = (err: unknown) =>
+  err instanceof ApiError ? err.message : 'Server non raggiungibile.'
+
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args)
   if (error) throw toApiError(error)

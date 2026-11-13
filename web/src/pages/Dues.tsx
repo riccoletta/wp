@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ApiError, addPayment, deletePayment, getDue, listDues, listSeasons,
+import { errorMessage, addPayment, deletePayment, getDue, listDues, listSeasons,
   type Due, type DueDetail as DueDetailData, type Season } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'
@@ -186,7 +186,7 @@ function PaymentForm({ dueId, suggested, onCancel, onSaved }: {
       await addPayment(dueId, { amountCents, paidOn, method: method as any, note: note || null })
       onSaved()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+      setError(errorMessage(err))
       setBusy(false)
     }
   }

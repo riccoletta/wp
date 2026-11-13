@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { ApiError } from '../lib/data'
+import { errorMessage } from '../lib/data'
 import { Button, Field, Input, Spinner } from '../components/ui'
 
 /**
@@ -38,7 +38,7 @@ function SignIn({ onForgot }: { onForgot: () => void }) {
     try {
       await login(email, password)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+      setError(errorMessage(err))
       setBusy(false)
     }
   }
@@ -83,7 +83,7 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
       await resetPassword(email)
       setSent(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+      setError(errorMessage(err))
     } finally { setBusy(false) }
   }
 
@@ -135,7 +135,7 @@ function SetPassword({ invito }: { invito: boolean }) {
       await setPassword(password)
       setDone(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+      setError(errorMessage(err))
       setBusy(false)
     }
   }

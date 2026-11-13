@@ -8,8 +8,9 @@
  */
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { asDataApi, asSystem, closeDb, initDb, type Tx } from '../src/db.js'
+import { asDataApi, asSystem, closeDb, initDb } from '../src/db.js'
 import { currentSeason, seedDemo } from '../src/fixtures.js'
+import { call, inDays } from './helpers.js'
 
 type Seed = Awaited<ReturnType<typeof seedDemo>>
 let data: Seed
@@ -20,16 +21,6 @@ before(async () => {
   data = await seedDemo()
 })
 after(async () => { await closeDb() })
-
-const rpc = <T = any>(tx: Tx, fn: string, args: unknown[] = []) =>
-  tx.one<any>(`select ${fn}(${args.map((_, i) => `$${i + 1}`).join(',')}) as r`, args)
-    .then((row) => row!.r as T)
-
-/** Una chiamata RPC come un ruolo, in una transazione tutta sua (come farebbe PostgREST). */
-const call = <T = any>(authUserId: string | null, fn: string, args: unknown[] = []) =>
-  asDataApi(authUserId, (tx) => rpc<T>(tx, fn, args))
-
-const inDays = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10)
 
 describe('flusso completo della segreteria', () => {
   let personId: string

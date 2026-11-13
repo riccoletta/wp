@@ -8,8 +8,9 @@
  */
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { asAnon, asDataApi, asSystem, closeDb, initDb, type Tx } from '../src/db.js'
+import { asAnon, asDataApi, asSystem, closeDb, initDb } from '../src/db.js'
 import { seedDemo } from '../src/fixtures.js'
+import { denied, rpc, sqlstate } from './helpers.js'
 
 type Seed = Awaited<ReturnType<typeof seedDemo>>
 let data: Seed
@@ -21,18 +22,7 @@ before(async () => {
 })
 after(async () => { await closeDb() })
 
-/** Il codice SQLSTATE di un errore, o `null` se la query è passata. */
-async function sqlstate(fn: () => Promise<unknown>): Promise<string | null> {
-  try { await fn(); return null } catch (err: any) { return err?.code ?? err?.message ?? 'errore' }
-}
-
-const denied = (code: string | null) =>
-  code !== null && (code === '42501' || /permission denied|not consentit/i.test(code))
-
 const ids = (rows: any[]) => rows.map((r) => r.id).sort()
-const rpc = <T = any>(tx: Tx, fn: string, args: unknown[] = []) =>
-  tx.one<any>(`select ${fn}(${args.map((_, i) => `$${i + 1}`).join(',')}) as r`, args)
-    .then((row) => row!.r as T)
 
 describe('Data API: utente anonimo', () => {
   it('non raggiunge nessun dato del club', async () => {

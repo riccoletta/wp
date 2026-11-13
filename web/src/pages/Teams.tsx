@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ApiError, activateSeason, createSeason, createTeam, listSeasons, listTeams,
+import { errorMessage, activateSeason, createSeason, createTeam, listSeasons, listTeams,
   type Season, type Team } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, useApi } from '../components/ui'
@@ -104,7 +104,7 @@ function SeasonForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           await createSeason(form)
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Nome" hint="Es. 2025/2026">
@@ -154,7 +154,7 @@ function TeamForm({ seasons, onClose, onSaved }: {
           await createTeam({ ...form, category: form.category || null })
           onSaved()
         } catch (err) {
-          setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
+          setError(errorMessage(err))
         }
       }}>
         <Field label="Stagione">
