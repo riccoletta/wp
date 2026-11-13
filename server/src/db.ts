@@ -17,7 +17,7 @@ const migrationsDir = path.join(root, 'db/migrations')
 // nulla di ciò che il deploy ha impostato davvero.
 try { process.loadEnvFile(path.join(root, '.env')) } catch { /* nessun .env: normale in produzione */ }
 
-// Chiave del lock consultivo: impedisce che due processi (due istanze serverless,
+// Chiave del lock consultivo: impedisce che due processi (due deploy in corso,
 // un deploy in corso) applichino le stesse migrazioni contemporaneamente.
 const MIGRATION_LOCK = 4150973021
 
@@ -27,7 +27,6 @@ const SCHEMA_MIGRATIONS = `create table if not exists schema_migrations (
 interface Migration { name: string; sql: string }
 
 interface Driver {
-  exec(sql: string): Promise<void>
   tx<T>(fn: (tx: Tx) => Promise<T>): Promise<T>
   close(): Promise<void>
   /** Applica le migrazioni mancanti e restituisce i nomi di quelle applicate. */
@@ -63,7 +62,6 @@ async function pgliteDriver(dir: string | undefined): Promise<Driver> {
     return new Set(r.rows.map((x) => x.version))
   }
   return {
-    exec: (sql) => db.exec(sql).then(() => undefined),
     tx: (fn) => db.transaction((t) => fn(wrap((sql, p) => t.query(sql, p).then((r: any) => r.rows)))) as any,
     close: () => db.close(),
     // PGlite è un singolo processo su un file locale: nessuna corsa da arbitrare.
@@ -124,7 +122,7 @@ export function resolveCaCert(value: string): string {
   } catch (err) {
     throw new Error(
       `DATABASE_CA_CERT non è un certificato utilizzabile ("${text.slice(0, 40)}"...): ` +
-        'in un ambiente serverless va messo il PEM, anche in base64, non il percorso di un file locale. ' +
+        'va indicato il PEM, anche in base64, oppure il percorso di un file leggibile. ' +
         `Dettaglio: ${err instanceof Error ? err.message : err}`,
     )
   }
@@ -133,16 +131,15 @@ export function resolveCaCert(value: string): string {
 async function pgDriver(url: string): Promise<Driver> {
   const { default: pg } = await import('pg')
   pg.types.setTypeParser(DATE_OID, (v: string) => v)
-  // Serverless (Vercel) + Transaction Pooler: poche connessioni per istanza, rilascio rapido.
-  // Nessuna query preparata con nome: il pooler in modalità transazione non le supporta.
-  const serverless = !!process.env.VERCEL
+  // Da qui passano solo i comandi da riga di comando (migrate, seed, db:verify,
+  // admin:bootstrap): processi brevi, una connessione per volta. Nessuna query
+  // preparata con nome, perché il Transaction Pooler di Supabase non le supporta.
   const pool = new pg.Pool({
     connectionString: url,
     ssl: sslConfig(url),
-    max: Number(process.env.DATABASE_POOL_MAX || (serverless ? 1 : 10)),
-    idleTimeoutMillis: Number(process.env.DATABASE_POOL_IDLE_MS || (serverless ? 10_000 : 30_000)),
+    max: Number(process.env.DATABASE_POOL_MAX || 10),
     connectionTimeoutMillis: 10_000,
-    allowExitOnIdle: serverless,
+    allowExitOnIdle: true,
     application_name: 'pallanuoto',
     statement_timeout: Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS || 15_000),
   })
@@ -156,7 +153,6 @@ async function pgDriver(url: string): Promise<Driver> {
   }
 
   return {
-    exec: async (sql) => { await pool.query(sql) },
     async tx(fn) {
       return withClient(async (c) => {
         try {

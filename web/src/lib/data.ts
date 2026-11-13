@@ -226,8 +226,6 @@ export const getTeam = (id: string) => rpcRequired<TeamDetail>('api_team_get', {
 export const createTeam = (t: { name: string; category: string | null; seasonId: string }) =>
   rpc<{ id: string }>('api_team_create', { p_name: t.name, p_category: t.category, p_season_id: t.seasonId })
 
-export const deleteTeam = (id: string) => rpc('api_team_delete', { p_id: id })
-
 export const addTeamMember = (teamId: string, personId: string) =>
   rpc('api_team_member_add', { p_team: teamId, p_person: personId })
 
@@ -269,8 +267,6 @@ export const getDue = (id: string) => rpcRequired<DueDetail>('api_due_get', { p_
 export const createDue = (d: {
   personId: string; seasonId: string; description: string; amountCents: number; dueDate?: string | null
 }) => rpc<{ id: string }>('api_due_create', { p: d })
-
-export const deleteDue = (id: string) => rpc('api_due_delete', { p_id: id })
 
 export const addPayment = (dueId: string, p: {
   amountCents: number; paidOn: string; method: Payment['method']; note?: string | null

@@ -20,7 +20,8 @@ export function parseEuro(input: string): number | null {
   return Math.round(parseFloat(normalized) * 100)
 }
 
-export function age(birthDate: string | null): number | null {
+/** Età compiuta, usata solo qui per sapere se una persona è minorenne. */
+function age(birthDate: string | null): number | null {
   if (!birthDate) return null
   const [y, m, d] = birthDate.slice(0, 10).split('-').map(Number)
   const today = new Date()
