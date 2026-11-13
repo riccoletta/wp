@@ -2,5 +2,7 @@ db/data
 db/e2e-data
 test-results
 e2e
-server/test
+server
 playwright.config.ts
+supabase
+db

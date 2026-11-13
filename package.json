@@ -6,19 +6,15 @@
     "web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=server & npm run dev --workspace=web",
-    "dev:server": "npm run dev --workspace=server",
-    "dev:web": "npm run dev --workspace=web",
+    "dev": "npm run dev --workspace=web",
     "build": "npm run build --workspace=web",
-    "build:server": "npm run build --workspace=server",
-    "build:vercel": "npm run build --workspace=web && npm run build --workspace=server",
     "check": "npm run check --workspace=server && npm run check --workspace=web && tsc --noEmit",
     "test": "npm run test --workspace=server",
     "seed": "npm run seed --workspace=server",
     "migrate": "npm run migrate --workspace=server",
     "db:verify": "npm run db:verify --workspace=server",
     "admin:bootstrap": "npm run admin:bootstrap --workspace=server --",
-    "e2e": "rm -rf db/e2e-data && PGLITE_DIR=./db/e2e-data npm run seed --workspace=server && playwright test"
+    "e2e": "playwright test"
   },
   "engines": {
     "node": "22.x"

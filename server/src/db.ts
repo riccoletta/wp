@@ -248,14 +248,25 @@ export function asSystem<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
 }
 
 /**
- * Transazione applicativa: assume il ruolo app_user e pubblica l'identità come
- * app.user_id. Da qui in poi i permessi li decide la RLS, non il codice.
+ * Una richiesta della Data API, riprodotta qui: ruolo `authenticated` e claim del
+ * JWT nella stessa variabile di sessione che PostgREST popola. Serve ai test e a
+ * `db:verify` per provare le policy davvero, senza passare da supabase-js.
  * `set local` vive solo nella transazione: compatibile con il pooler in modalità transazione.
  */
-export function asUser<T>(userId: string | null, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export function asDataApi<T>(authUserId: string | null, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return driver!.tx(async (tx) => {
-    await tx.query(`select set_config('app.user_id', $1, true)`, [userId ?? ''])
-    await tx.query('set local role app_user')
+    const claims = JSON.stringify({ sub: authUserId, role: 'authenticated' })
+    await tx.query(`select set_config('request.jwt.claims', $1, true)`, [claims])
+    await tx.query('set local role authenticated')
+    return fn(tx)
+  })
+}
+
+/** Una richiesta senza JWT: PostgREST la serve come ruolo `anon`. */
+export function asAnon<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return driver!.tx(async (tx) => {
+    await tx.query(`select set_config('request.jwt.claims', '', true)`)
+    await tx.query('set local role anon')
     return fn(tx)
   })
 }

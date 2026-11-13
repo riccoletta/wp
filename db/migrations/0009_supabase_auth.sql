@@ -192,8 +192,11 @@ grant select                 on people, guardian_links, registrations, medical_e
 grant select                 on dues, payment_records, dues_status, license, user_roles to authenticated;
 
 grant insert, update         on people, seasons, registrations to authenticated;
-grant insert, delete         on guardian_links, teams, team_memberships, coach_assignments to authenticated;
-grant insert, delete         on dues, payment_records to authenticated;
+grant insert, delete         on teams, dues, payment_records to authenticated;
+-- UPDATE serve agli `on conflict do update`: ricollegare un tutore o rimettere un
+-- atleta in rosa non deve fallire perché la riga c'era già. La policy di UPDATE
+-- resta la stessa delle altre (admin + licenza operativa), quindi non apre nulla.
+grant insert, update, delete on guardian_links, team_memberships, coach_assignments to authenticated;
 grant insert, update, delete on medical_expiries to authenticated;
 
 -- `password_hash` non esce dalla Data API nemmeno per l'admin: GRANT per colonna.

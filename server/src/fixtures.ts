@@ -1,23 +1,26 @@
-import { hashPassword } from './auth.js'
 import { asSystem, type Tx } from './db.js'
 
 /**
  * Crea una persona e, se servono ruoli, il relativo account. Dati sintetici.
  * Idempotente: l'account è identificato dall'email, la persona senza account
  * da nome + data di nascita. Al secondo giro non duplica nulla.
+ *
+ * L'account porta un `auth_user_id` sintetico: le credenziali vere stanno in
+ * Supabase Auth, qui serve solo un'identità con cui provare le policy.
  */
 export async function makePerson(
   tx: Tx,
   p: { firstName: string; lastName: string; kind?: string; birthDate?: string | null },
-  account?: { email: string; password: string; roles: string[] },
+  account?: { email: string; roles: string[] },
 ) {
   let personId: string | undefined
   let userId: string | null = null
+  let authUserId: string | null = null
 
   if (account) {
     const existing = await tx.one<any>(
-      'select id, person_id from app_users where lower(email) = lower($1)', [account.email])
-    if (existing) { userId = existing.id; personId = existing.person_id }
+      'select id, person_id, auth_user_id from app_users where lower(email) = lower($1)', [account.email])
+    if (existing) { userId = existing.id; personId = existing.person_id; authUserId = existing.auth_user_id }
   }
   if (!personId) {
     const found = await tx.one<any>(
@@ -29,9 +32,12 @@ export async function makePerson(
       [p.firstName, p.lastName, p.kind ?? 'atleta', p.birthDate ?? null]))!.id
   }
   if (account && !userId) {
-    userId = (await tx.one<any>(
-      `insert into app_users (person_id, email, password_hash) values ($1,$2,$3) returning id`,
-      [personId, account.email, await hashPassword(account.password)]))!.id
+    const row = await tx.one<any>(
+      `insert into app_users (person_id, email, auth_user_id)
+       values ($1, $2, gen_random_uuid()) returning id, auth_user_id`,
+      [personId, account.email])
+    userId = row!.id
+    authUserId = row!.auth_user_id
   }
   if (account) {
     for (const role of account.roles) {
@@ -39,7 +45,7 @@ export async function makePerson(
         'insert into user_roles (user_id, role) values ($1,$2) on conflict do nothing', [userId, role])
     }
   }
-  return { personId: personId as string, userId }
+  return { personId: personId as string, userId, authUserId }
 }
 
 /** La stagione sportiva corrente: da settembre a luglio. Così i dati di esempio non invecchiano. */
@@ -89,16 +95,16 @@ export async function seedDemo() {
     const teamB = await team('Prima Squadra', 'Serie C')
 
     const admin = await makePerson(tx, { firstName: 'Giulia', lastName: 'Segreteria', kind: 'staff' },
-      { email: 'segreteria@example.test', password: 'password123', roles: ['admin'] })
+      { email: 'segreteria@example.test', roles: ['admin'] })
     const coachA = await makePerson(tx, { firstName: 'Marco', lastName: 'Rossi', kind: 'staff' },
-      { email: 'coach.a@example.test', password: 'password123', roles: ['coach'] })
+      { email: 'coach.a@example.test', roles: ['coach'] })
     const coachB = await makePerson(tx, { firstName: 'Elena', lastName: 'Bianchi', kind: 'staff' },
-      { email: 'coach.b@example.test', password: 'password123', roles: ['coach'] })
+      { email: 'coach.b@example.test', roles: ['coach'] })
     const athlete = await makePerson(tx, { firstName: 'Luca', lastName: 'Verdi', birthDate: '2000-04-12' },
-      { email: 'atleta@example.test', password: 'password123', roles: ['athlete'] })
+      { email: 'atleta@example.test', roles: ['athlete'] })
     const minor = await makePerson(tx, { firstName: 'Sofia', lastName: 'Neri', birthDate: '2012-02-20' })
     const guardian = await makePerson(tx, { firstName: 'Paolo', lastName: 'Neri', kind: 'socio' },
-      { email: 'tutore@example.test', password: 'password123', roles: ['guardian'] })
+      { email: 'tutore@example.test', roles: ['guardian'] })
     const other = await makePerson(tx, { firstName: 'Chiara', lastName: 'Gialli', birthDate: '2011-10-05' })
 
     const coachOf = (teamId: string, personId: string) => tx.query(
