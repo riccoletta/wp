@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  ApiError, addGuardian, createDue, deleteMedical, getPerson, invitePerson, listPeople,
+  ApiError, addGuardian, createDue, deleteMedical, getPerson, invitePerson,
   listSeasons, removeGuardian, saveMedical, saveRegistration, updatePerson,
-  type PersonDetail as Detail, type Person, type Role, type Season,
+  type PersonDetail as Detail, type Role, type Season,
 } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, useApi } from '../components/ui'
+import PersonPicker from '../components/PersonPicker'
 import {
   DUE_LABELS, KIND_LABELS, MEDICAL_LABELS, REGISTRATION_LABELS,
   euro, formatDate, formatDateTime, isMinor, parseEuro, todayISO,
@@ -256,50 +257,14 @@ function Guardians({ person, onChange }: { person: Detail; onChange: () => void 
         )
       )}
       {adding && (
-        <GuardianPicker minorId={person.id} onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); onChange() }} />
+        <PersonPicker title="Collega un tutore" confirmLabel="Collega" exclude={[person.id]}
+          onClose={() => setAdding(false)}
+          onPick={async (guardianId) => {
+            await addGuardian(person.id, guardianId)
+            setAdding(false); onChange()
+          }} />
       )}
     </Card>
-  )
-}
-
-function GuardianPicker({ minorId, onClose, onSaved }: {
-  minorId: string; onClose: () => void; onSaved: () => void
-}) {
-  const people = useApi<Person[]>(() => listPeople())
-  const [selected, setSelected] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <Modal title="Collega un tutore" onClose={onClose}>
-      <Async state={people}>
-        {(list) => (
-          <form className="space-y-3" onSubmit={async (e) => {
-            e.preventDefault()
-            setError(null)
-            try {
-              await addGuardian(minorId, selected)
-              onSaved()
-            } catch (err) {
-              setError(err instanceof ApiError ? err.message : 'Server non raggiungibile.')
-            }
-          }}>
-            <Field label="Persona">
-              <Select value={selected} required onChange={(e) => setSelected(e.target.value)}>
-                <option value="">Scegli…</option>
-                {list.filter((p) => p.id !== minorId).map((p) => (
-                  <option key={p.id} value={p.id}>{p.lastName} {p.firstName}</option>
-                ))}
-              </Select>
-            </Field>
-            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>Annulla</Button>
-              <Button type="submit" disabled={!selected}>Collega</Button>
-            </div>
-          </form>
-        )}
-      </Async>
-    </Modal>
   )
 }
 
