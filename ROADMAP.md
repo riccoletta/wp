@@ -299,8 +299,10 @@ passato a Supabase Auth.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_SUPABASE_URL` del progetto `pnm`: non sono
   ricavabili dalla sola `DATABASE_URL`. Senza, il frontend non si collega e le prove
   Playwright non partono.
-- Migrazioni `0009`–`0011` sul progetto Supabase reale: preparate e verificate su un
-  database isolato (PGlite, 38 test), **non ancora applicate** al progetto di produzione.
+- ~~Migrazioni `0009`–`0011` sul progetto Supabase reale~~ — **fatto il 2026-11-13**:
+  applicate con `npm run migrate` su `pnm` (PostgreSQL 17.11) e verificate con
+  `npm run db:verify`, 16 verifiche su 16. Chiave esterna `app_users → auth.users`
+  creata, `auth.users` leggibile dal ruolo delle migrazioni, 0 identità registrate.
 - Distribuzione delle Edge Function: serve la Supabase CLI autenticata (non installata
   in questo ambiente).
 - Redirect URL di Supabase Auth sul dominio Vercel reale.
@@ -500,3 +502,14 @@ amministratore collegato a un'identità Supabase | npm run check (pulito), npm t
 progetto Supabase reale e distribuire le Edge Function | BLOCKER: mancano
 `VITE_SUPABASE_PUBLISHABLE_KEY`, la Supabase CLI autenticata e l'approvazione per il
 cambio di schema in produzione (vedi "Blocchi aperti di M9")`
+
+`2026-11-13 | M9 su Supabase reale | Migrazioni 0009-0011 applicate al progetto `pnm`
+(PostgreSQL 17.11) con `npm run migrate`: additive, nessun dato toccato, database privo di
+righe del club prima e dopo | `npm run db:verify` sul progetto reale: 16 verifiche su 16 —
+anonimo respinto su tabelle e RPC (42501), identità risolta da auth.uid(), `sessions`,
+`login_attempts`, `invites` e `password_hash` irraggiungibili dalla Data API, licenza non
+scrivibile e ruoli non assegnabili da sé, 32 funzioni `api_*` presenti, nessun privilegio
+di tabella per `anon`, chiave esterna `app_users → auth.users` creata, `auth.users`
+leggibile dal ruolo delle migrazioni (0 identità registrate) | prossimo: VITE_* in .env e
+su Vercel, poi primo amministratore e distribuzione delle Edge Function | BLOCKER:
+`VITE_SUPABASE_PUBLISHABLE_KEY` e Supabase CLI, a carico dell'utente`

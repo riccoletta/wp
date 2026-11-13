@@ -73,12 +73,32 @@ try {
                            where pronamespace = 'public'::regnamespace and proname like 'api\\_%'`))
   check('funzioni api_* presenti', Number(rpcOk?.n) >= 25, `${rpcOk?.n} funzioni`)
 
+  // Senza identità nemmeno lo stato della licenza esce: `license_read` lo concede a chi
+  // è autenticato davvero. Lo stato derivato è provato dai test, con un'identità vera.
   const licState = await asDataApi(null, (t) => t.one<{ r: any }>('select api_license() as r'))
-  check('stato della licenza derivato dal database', !!licState?.r?.phase,
-    `fase ${licState?.r?.phase ?? '?'}, sola lettura ${licState?.r?.readOnly}`)
+  check('licenza non divulgata senza identità', licState?.r == null,
+    licState?.r == null ? 'nessun dato restituito' : `trapelata: fase ${licState.r.phase}`)
+
+  const readOnly = await asSystem((t) => t.one<{ r: boolean }>('select app_license_readonly() as r'))
+  check('stato operativo della licenza calcolato dal database', typeof readOnly?.r === 'boolean',
+    `sola lettura = ${readOnly?.r}`)
 
   // --- `anon` non deve avere privilegi, oggi né dopo le migrazioni --------------
   if (isManagedPostgres()) {
+    // Serve ad `admin:bootstrap`: senza lettura di auth.users non si può collegare
+    // un amministratore alla sua identità Supabase.
+    const authUsers = await asSystem((t) =>
+      t.one<{ n: string }>('select count(*)::text as n from auth.users')
+        .then((r) => r?.n ?? null).catch(() => null))
+    check('auth.users leggibile dal ruolo delle migrazioni', authUsers !== null,
+      authUsers === null ? 'lettura negata: admin:bootstrap non funzionerà'
+                         : `${authUsers} identità registrate`)
+
+    const fk = await asSystem((t) =>
+      t.one<{ ok: boolean }>(
+        `select exists (select 1 from pg_constraint where conname = 'app_users_auth_user_fk') as ok`))
+    console.log(`INFO app_users → auth.users: ${fk?.ok ? 'chiave esterna presente' : "solo indice unico (REFERENCES non concesso su auth.users)"}`)
+
     const exposed = await asSystem((t) =>
       t.query<{ grantee: string; table_name: string }>(
         `select distinct grantee, table_name from information_schema.role_table_grants
