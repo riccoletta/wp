@@ -8,9 +8,10 @@ import {
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, useApi } from '../components/ui'
 import PersonPicker from '../components/PersonPicker'
+import { DueBadge, MedicalBadge, RegistrationBadge } from '../components/badges'
 import {
-  DUE_LABELS, KIND_LABELS, MEDICAL_LABELS, REGISTRATION_LABELS,
-  euro, formatDate, formatDateTime, isMinor, parseEuro, todayISO,
+  KIND_LABELS, MEDICAL_LABELS, REGISTRATION_LABELS,
+  euro, formatDate, formatDateTime, isMinor, parseEuro,
 } from '../lib/format'
 
 export default function PersonDetail() {
@@ -191,25 +192,6 @@ const Info = ({ label, value }: { label: string; value: string }) => (
     <dt className="text-xs text-slate-500">{label}</dt>
     <dd className="text-slate-800">{value}</dd>
   </div>
-)
-
-export function MedicalBadge({ expiresOn }: { expiresOn: string }) {
-  const days = Math.round((Date.parse(expiresOn) - Date.parse(todayISO())) / 864e5)
-  if (days < 0) return <Badge tone="danger">Scaduto</Badge>
-  if (days <= 30) return <Badge tone="warn">In scadenza</Badge>
-  return <Badge tone="ok">Valido</Badge>
-}
-
-export const RegistrationBadge = ({ status }: { status: string }) => (
-  <Badge tone={status === 'attivo' ? 'ok' : status === 'scaduto' ? 'danger' : 'warn'}>
-    {REGISTRATION_LABELS[status] ?? status}
-  </Badge>
-)
-
-export const DueBadge = ({ status }: { status: string }) => (
-  <Badge tone={status === 'saldata' ? 'ok' : status === 'parziale' ? 'warn' : 'danger'}>
-    {DUE_LABELS[status] ?? status}
-  </Badge>
 )
 
 /** Il form anagrafica vive nella pagina elenco: lo riusiamo qui senza duplicarlo. */

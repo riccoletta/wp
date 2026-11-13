@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Table, useApi } from '../components/ui'
 import PersonPicker from '../components/PersonPicker'
 import { formatDate } from '../lib/format'
-import { MedicalBadge } from './PersonDetail'
+import { MedicalBadge } from '../components/badges'
 
 export default function TeamDetail() {
   const { id } = useParams<{ id: string }>()

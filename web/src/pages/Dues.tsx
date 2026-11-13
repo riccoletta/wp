@@ -5,7 +5,7 @@ import { errorMessage, addPayment, deletePayment, getDue, listDues, listSeasons,
 import { useAuth } from '../lib/auth'
 import { Async, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'
 import { DUE_LABELS, euro, formatDate, parseEuro, todayISO } from '../lib/format'
-import { DueBadge } from './PersonDetail'
+import { DueBadge } from '../components/badges'
 
 export default function Dues() {
   const { can } = useAuth()

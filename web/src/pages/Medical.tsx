@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { listMedical, type MedicalRow } from '../lib/data'
 import { Async, Button, Card, Table, useApi } from '../components/ui'
 import { MEDICAL_LABELS, formatDate } from '../lib/format'
-import { MedicalBadge } from './PersonDetail'
+import { MedicalBadge } from '../components/badges'
 
 const FILTERS = [
   { value: '', label: 'Tutti' },
