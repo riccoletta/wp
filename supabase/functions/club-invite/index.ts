@@ -6,10 +6,11 @@
  * roba da browser), quindi la funzione gira server-side e si difende da sola:
  *
  *   1) chi chiama deve avere una sessione Supabase valida;
- *   2) quella sessione deve corrispondere a un utente applicativo con ruolo `admin`
- *      (il ruolo si legge dal database, non dai metadati dell'account, che l'utente
- *      stesso potrebbe modificare);
- *   3) la licenza dev'essere operativa: invitare è una scrittura.
+ *   2) l'invito vale per la società **della persona invitata**, e chi chiama dev'essere
+ *      la segreteria di quella società — o il proprietario della piattaforma. Il ruolo
+ *      si legge dal database, non dai metadati dell'account, che l'utente stesso
+ *      potrebbe modificare;
+ *   3) l'abbonamento di quella società dev'essere operativo: invitare è una scrittura.
  *
  * Nessuna registrazione pubblica: non esiste un percorso che crei un account senza
  * passare di qui.
@@ -47,23 +48,6 @@ Deno.serve(async (req) => {
   const { data: userData, error: userError } = await caller.auth.getUser()
   if (userError || !userData.user) return fail(401, 'Autenticazione richiesta')
 
-  // 2) È la segreteria? Il ruolo lo dice il database.
-  const { data: callerRoles } = await admin
-    .from('user_roles')
-    .select('role, app_users!inner(auth_user_id, active)')
-    .eq('app_users.auth_user_id', userData.user.id)
-    .eq('app_users.active', true)
-  if (!callerRoles?.some((r) => r.role === 'admin')) {
-    return fail(403, 'Operazione consentita solo alla segreteria')
-  }
-
-  // 3) La licenza permette di scrivere?
-  const { data: readOnly } = await admin.rpc('app_license_readonly')
-  if (readOnly) {
-    const { data: message } = await admin.rpc('app_license_message')
-    return fail(403, message ?? "L'applicazione è in sola lettura.")
-  }
-
   const body = await req.json().catch(() => null)
   const personId = String(body?.personId ?? '')
   const email = String(body?.email ?? '').trim().toLowerCase()
@@ -75,16 +59,39 @@ Deno.serve(async (req) => {
     return fail(400, 'Scegli almeno un ruolo valido')
   }
 
+  // 2) La persona, e con lei la società dell'invito.
   const { data: person } = await admin
-    .from('people').select('id, archived').eq('id', personId).maybeSingle()
+    .from('people').select('id, archived, club_id').eq('id', personId).maybeSingle()
   if (!person) return fail(404, 'Persona non trovata in anagrafica')
   if (person.archived) return fail(400, 'La persona è archiviata: ripristinala prima di invitarla')
+  const clubId = person.club_id as string
 
-  // L'email di accesso è unica: se è già di un'altra persona ci fermiamo qui e lo diciamo.
+  // 3) Chi chiama è la segreteria DI QUELLA società (o il proprietario della piattaforma)?
+  const { data: callerRoles } = await admin
+    .from('user_roles')
+    .select('role, app_users!inner(auth_user_id, active, club_id)')
+    .eq('app_users.auth_user_id', userData.user.id)
+    .eq('app_users.active', true)
+    .eq('app_users.club_id', clubId)
+  const { data: owner } = await admin
+    .from('platform_owners').select('auth_user_id').eq('auth_user_id', userData.user.id).maybeSingle()
+  if (!owner && !callerRoles?.some((r) => r.role === 'admin')) {
+    return fail(403, 'Operazione consentita solo alla segreteria della società')
+  }
+
+  // 4) L'abbonamento di quella società permette di scrivere?
+  const { data: blocked } = await admin.rpc('app_subscription_blocked', { c: clubId })
+  if (blocked) {
+    const { data: message } = await admin.rpc('app_subscription_message', { c: clubId })
+    return fail(403, message ?? 'La società non è operativa.')
+  }
+
+  // L'email di accesso è unica dentro la società: se è già di un'altra persona ci
+  // fermiamo qui e lo diciamo. In un'altra società lo stesso indirizzo è legittimo.
   const { data: byEmail } = await admin
-    .from('app_users').select('id, person_id').ilike('email', email).maybeSingle()
+    .from('app_users').select('id, person_id').eq('club_id', clubId).ilike('email', email).maybeSingle()
   if (byEmail && byEmail.person_id !== personId) {
-    return fail(409, 'Questo indirizzo è già usato da un altro accesso')
+    return fail(409, 'Questo indirizzo è già usato da un altro accesso di questa società')
   }
 
   // Identità Supabase: nuova, oppure quella già collegata a questa email.
@@ -110,7 +117,7 @@ Deno.serve(async (req) => {
   // Collegamento all'utente applicativo: la persona, gli id e i legami restano quelli.
   const { data: appUser, error: upsertError } = await admin
     .from('app_users')
-    .upsert({ person_id: personId, email, auth_user_id: authUserId, active: true },
+    .upsert({ club_id: clubId, person_id: personId, email, auth_user_id: authUserId, active: true },
             { onConflict: 'person_id' })
     .select('id').single()
   if (upsertError) return fail(500, 'Account non collegato: ' + upsertError.message)

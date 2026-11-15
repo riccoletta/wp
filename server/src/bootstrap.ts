@@ -30,6 +30,8 @@ export interface BootstrapInput {
   email: string
   firstName: string
   lastName: string
+  /** Società di cui si crea la segreteria. Senza indicazioni, la prima: Pallanuoto Milano. */
+  clubSlug?: string
   /** Consenso esplicito a creare un amministratore quando ne esiste già un altro. */
   addition?: boolean
 }
@@ -40,6 +42,8 @@ export interface BootstrapResult {
   userId: string
   personId: string
   authUserId: string
+  clubId: string
+  clubName: string
 }
 
 export class BootstrapError extends Error {}
@@ -56,8 +60,19 @@ export async function bootstrapAdmin(input: BootstrapInput): Promise<BootstrapRe
     throw new BootstrapError('Nome e cognome sono obbligatori.')
   }
 
+  const slug = (input.clubSlug ?? 'pallanuoto-milano').trim().toLowerCase()
+
   return asSystem(async (tx) => {
     await tx.query('select pg_advisory_xact_lock($1)', [BOOTSTRAP_LOCK])
+
+    // La segreteria appartiene a una società: senza società non si crea nulla.
+    const club = await tx.one<any>('select id, name from clubs where slug = $1', [slug])
+    if (!club) {
+      throw new BootstrapError(
+        `Nessuna società con lo slug "${slug}". Creala dal portale della piattaforma `
+        + '(/admin) oppure applica le migrazioni, che creano "pallanuoto-milano".',
+      )
+    }
 
     // L'identità dev'essere già in Supabase Auth: qui non si creano credenziali.
     const identity = await findAuthUser(tx, email)
@@ -70,15 +85,17 @@ export async function bootstrapAdmin(input: BootstrapInput): Promise<BootstrapRe
     }
 
     const existing = await tx.one<any>(
-      'select id, person_id, auth_user_id from app_users where lower(email) = lower($1)', [email])
+      'select id, person_id, auth_user_id from app_users where club_id = $1 and lower(email) = lower($2)',
+      [club.id, email])
 
+    // Un amministratore per volta, e per società: quelli delle altre società non contano.
     const otherAdmin = await tx.one<any>(
       `select 1 from user_roles r join app_users u on u.id = r.user_id
-        where r.role = 'admin' and lower(u.email) <> lower($1)`, [email])
+        where r.role = 'admin' and u.club_id = $1 and lower(u.email) <> lower($2)`, [club.id, email])
     if (otherAdmin && !input.addition) {
       throw new BootstrapError(
-        'Esiste già un amministratore. Gli accessi successivi si creano per invito, '
-        + 'dalla segreteria. Per forzare aggiungi --aggiungi.',
+        `Esiste già un amministratore per ${club.name}. Gli accessi successivi si creano `
+        + 'per invito, dalla segreteria. Per forzare aggiungi --aggiungi.',
       )
     }
 
@@ -100,19 +117,22 @@ export async function bootstrapAdmin(input: BootstrapInput): Promise<BootstrapRe
       return {
         outcome: hadRole ? 'già-presente' : 'ruolo-aggiunto',
         email, userId: existing.id, personId: existing.person_id, authUserId: identity,
+        clubId: club.id, clubName: club.name,
       }
     }
 
     const person = await tx.one<any>(
-      `insert into people (first_name, last_name, kind, email) values ($1,$2,'staff',$3) returning id`,
-      [input.firstName.trim(), input.lastName.trim(), email])
+      `insert into people (club_id, first_name, last_name, kind, email)
+       values ($1,$2,$3,'staff',$4) returning id`,
+      [club.id, input.firstName.trim(), input.lastName.trim(), email])
     const user = await tx.one<any>(
-      `insert into app_users (person_id, email, auth_user_id) values ($1,$2,$3) returning id`,
-      [person!.id, email, identity])
+      `insert into app_users (club_id, person_id, email, auth_user_id) values ($1,$2,$3,$4) returning id`,
+      [club.id, person!.id, email, identity])
     await tx.query(`insert into user_roles (user_id, role) values ($1,'admin')`, [user!.id])
 
     return {
       outcome: 'creato', email, userId: user!.id, personId: person!.id, authUserId: identity,
+      clubId: club.id, clubName: club.name,
     }
   })
 }

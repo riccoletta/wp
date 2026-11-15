@@ -343,6 +343,64 @@ passato a Supabase Auth.
 
 ---
 
+## M10 — Piattaforma multi-società e proprietario della piattaforma [P0]
+
+**Cambio di rotta dichiarato.** Fino a M9 il prodotto era monosocietà (D1) e il multi-club era
+vietato. Su richiesta esplicita del committente diventa una piattaforma: **una società = un cliente**
+(non una squadra: Prima, Amatoriali e Under restano squadre *dentro* Pallanuoto Milano).
+D1 è sostituita da **D26**. Il resto non cambia: FASE 1 invariata, permessi solo in RLS,
+niente backend Express, niente gateway di pagamento.
+
+### M10a — Dati: società, proprietario, abbonamenti [P0]
+- [ ] `0012_clubs.sql` (additiva): `clubs`, `platform_owners`, `subscriptions`,
+      `subscription_events`, `club_sessions`.
+- [ ] `club_id` su tutti i dati di società, con backfill su **Pallanuoto Milano** e
+      `default app_current_club()`: le `api_*` di inserimento non cambiano di una riga.
+- [ ] Chiavi esterne **composite** `(figlio, club_id) → (padre, club_id)`: un tesseramento, una
+      rosa, un versamento o un legame tutore↔minore fra società diverse è impossibile nel database.
+- [ ] Unicità ripensate per società: nome stagione, stagione attiva, email e identità Supabase.
+- [ ] Una stagione attiva **per società**.
+
+### M10b — Sicurezza: gerarchia e isolamento [P0]
+- [ ] `app_is_platform_owner()` da tabella `platform_owners`, mai da metadati dell'account né
+      da corrispondenza di email. Nessun ruolo applicativo ha GRANT di scrittura su quella tabella.
+- [ ] `app_current_club()`: società scelta con `api_club_enter`, **validata a ogni chiamata**.
+      Cambiare URL o parametro non apre nulla: la policy filtra su `club_id`.
+- [ ] Ogni policy di lettura e scrittura passa da `app_club_open(club_id)`.
+- [ ] Abbonamento per società: attivo → pieno; in scadenza/tolleranza → avviso; scaduto o sospeso →
+      niente dati operativi (nemmeno via REST o RPC), restano accesso, stato abbonamento e uscita.
+- [ ] Il proprietario della piattaforma entra anche in una società sospesa, per rimetterla in piedi.
+
+### M10c — Portale del proprietario e applicazione per società [P0]
+- [ ] `/admin`: elenco società con stato, scadenza, numero di atleti e squadre; creazione,
+      sospensione, rinnovo, riattivazione, "Entra nella società".
+- [ ] `/club/<slug>/…`: la stessa interfaccia FASE 1 di prima, nessuna pagina riscritta.
+- [ ] "Torna alle società" per il proprietario; l'utente di società apre solo la propria.
+
+### M10d — Migrazione dei dati esistenti [P0]
+- [ ] Pallanuoto Milano creata come prima società, tutti i dati già presenti associati a lei.
+- [ ] Licenza globale → abbonamento della società, stato e date preservati.
+- [ ] `npm run platform:owner`: promozione del proprietario a partire da una identità Supabase
+      già esistente, un atto unico e registrato, senza toccare gli admin di società.
+- [ ] Nessuna migrazione precedente modificata, nessun dato cancellato.
+
+### M10e — Prove [P0]
+- [ ] Due società indipendenti (Pallanuoto Milano + società sintetica di prova).
+- [ ] Proprietario vede entrambe ed entra in entrambe; admin di A non vede né scrive B e viceversa;
+      parametro RPC falsificato inutile; chiavi esterne incrociate rifiutate; coach/atleta/tutore
+      invariati; sospensione di A che non tocca B; società sospesa che non aggira la Data API;
+      riattivazione; dati di Pallanuoto Milano preservati.
+
+### Ordine di applicazione in produzione (richiede approvazione esplicita)
+1. `npm run migrate` su un database di prova, poi `npm run db:verify` e `npm test`.
+2. Solo dopo approvazione: `npm run migrate` sul progetto `pnm` (additiva, nessun reset).
+3. `npm run platform:owner -- --email=<proprietario>` con la connessione diretta del ruolo
+   proprietario: promuove **una sola** identità, già esistente in Supabase Auth.
+4. Verifica: `/admin` elenca Pallanuoto Milano con i contatori giusti; un admin di società
+   riceve `42501` sulle operazioni di piattaforma.
+
+---
+
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
 
 ### M6 — Piscine e spazi [P2]
@@ -561,3 +619,11 @@ npm test 44/44 (erano 38), npm run build ok, bundle 456,95 → 455,62 kB (gzip 1
 possibili (riscrittura SQL e rimozione del client Realtime) sono bloccate, la prima perché
 le migrazioni sono già applicate a `pnm`, la seconda perché tocca l'autenticazione |
 prossimo: approvare le tre proposte residue in `CODE_AUDIT.md` | nessun blocker nuovo`
+- D26 — **Una società = un cliente.** D1 (monosocietà) è superata su richiesta del committente:
+  i dati di società portano `club_id`, i permessi restano una sola volta nelle policy RLS e la
+  società corrente è una scelta esplicita registrata nel database, non un pezzo di URL. Il
+  proprietario della piattaforma è un'identità promossa a mano, separata dagli amministratori
+  di società: nessuno dei due può diventare l'altro dall'interfaccia.
+- D27 — **Abbonamento scaduto = porta chiusa, non sola lettura.** D13 valeva per la licenza del
+  software su un'installazione sola. Con più clienti, scaduto o sospeso significa niente dati
+  operativi: restano l'accesso, lo stato dell'abbonamento e l'uscita, e tutti i dati al loro posto.

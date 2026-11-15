@@ -8,7 +8,8 @@
     "check": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "db:verify": "tsx src/verify-db.ts",
-    "admin:bootstrap": "tsx src/bootstrap-admin.ts"
+    "admin:bootstrap": "tsx src/bootstrap-admin.ts",
+    "platform:owner": "tsx src/platform-owner.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

@@ -144,31 +144,50 @@ describe('Data API: scalata di privilegi', () => {
   })
 })
 
-describe('Data API: licenza applicata dal database', () => {
-  const restore = () => asSystem((tx) =>
-    tx.query(`update license set status = 'attiva', expires_on = current_date + 365`))
+describe("Data API: abbonamento applicato dal database", () => {
+  const sub = (sql: string) => asSystem((tx) => tx.query(
+    `update subscriptions set ${sql} where club_id = $1`, [data.clubId]))
+  const restore = () => sub(`status = 'attiva', expires_on = current_date + 365`)
 
-  it('scaduta oltre la tolleranza: la segreteria legge ma non scrive', async () => {
-    await asSystem((tx) => tx.query(
-      `update license set status = 'attiva', expires_on = current_date - 30, grace_days = 15`))
+  it('in tolleranza: avviso, ma la società resta consultabile e scrivibile', async () => {
+    await sub(`status = 'attiva', expires_on = current_date - 5, grace_days = 15`)
     try {
       const people = await asDataApi(data.admin.authUserId, (tx) => tx.query('select id from people'))
-      assert.ok(people.length > 0, 'in sola lettura i dati restano consultabili')
+      assert.ok(people.length > 0)
+      const s = await asDataApi(data.admin.authUserId, (tx) => rpc<any>(tx, 'api_subscription'))
+      assert.equal(s.phase, 'tolleranza')
+      assert.equal(s.blocked, false)
+      assert.match(s.message, /tolleranza/i)
+    } finally { await restore() }
+  })
+
+  it('scaduto oltre la tolleranza: niente dati operativi, nemmeno in lettura', async () => {
+    await sub(`status = 'attiva', expires_on = current_date - 30, grace_days = 15`)
+    try {
+      const people = await asDataApi(data.admin.authUserId, (tx) => tx.query('select id from people'))
+      assert.deepEqual(people, [], 'la società chiusa non restituisce dati operativi')
+      const dues = await asDataApi(data.admin.authUserId, (tx) => tx.query('select id from dues'))
+      assert.deepEqual(dues, [])
+
+      // Resta quel tanto che serve a capire perché: lo stato dell'abbonamento.
+      const s = await asDataApi(data.admin.authUserId, (tx) => rpc<any>(tx, 'api_subscription'))
+      assert.equal(s.phase, 'scaduta')
+      assert.equal(s.blocked, true)
+      assert.match(s.message, /scaduto/i)
 
       let message = ''
       try {
         await asDataApi(data.admin.authUserId, (tx) => tx.query(
-          `insert into people (first_name, last_name) values ('Bloccata','Dalla Licenza')`))
+          `insert into people (first_name, last_name) values ('Bloccata','Dall Abbonamento')`))
         assert.fail('la scrittura doveva essere respinta dal database')
       } catch (err: any) { message = String(err.message) }
-      assert.match(message, /sola lettura/i)
-      assert.match(message, /Licenza scaduta/i)
+      assert.match(message, /Abbonamento scaduto/i)
     } finally { await restore() }
   })
 
-  it('sospesa: respinta anche la RPC, e i dati restano intatti', async () => {
+  it('sospeso: respinta anche la RPC, e i dati restano intatti', async () => {
     const prima = await asSystem((tx) => tx.one<any>('select count(*)::int as n from people'))
-    await asSystem((tx) => tx.query(`update license set status = 'sospesa'`))
+    await sub(`status = 'sospesa'`)
     try {
       let message = ''
       try {
@@ -176,22 +195,27 @@ describe('Data API: licenza applicata dal database', () => {
           rpc(tx, 'api_person_create', [JSON.stringify({ firstName: 'Mai', lastName: 'Creata' })]))
         assert.fail('la RPC doveva essere respinta')
       } catch (err: any) { message = String(err.message) }
-      assert.match(message, /Licenza sospesa/i)
+      assert.match(message, /Abbonamento sospeso/i)
+
+      const lista = await asDataApi(data.admin.authUserId, (tx) => rpc<any[]>(tx, 'api_people_list'))
+      assert.deepEqual(lista, [], 'sospesa: nemmeno la lettura passa')
       const dopo = await asSystem((tx) => tx.one<any>('select count(*)::int as n from people'))
       assert.equal(dopo!.n, prima!.n, 'nessun dato cancellato o creato')
     } finally { await restore() }
   })
 
-  it('riattivata: la scrittura torna', async () => {
+  it('riattivato: lettura e scrittura tornano, con i dati di prima', async () => {
     await restore()
     const created = await asDataApi(data.admin.authUserId, (tx) =>
       rpc<{ id: string }>(tx, 'api_person_create', [JSON.stringify({ firstName: 'Torna', lastName: 'Scrivibile' })]))
     assert.ok(created.id)
+    const people = await asDataApi(data.admin.authUserId, (tx) => tx.query('select id from people'))
+    assert.ok(people.length > 0)
   })
 })
 
 describe('Data API: stato derivato e contatori', () => {
-  it('la licenza arriva al client già interpretata', async () => {
+  it("l'abbonamento arriva al client già interpretato", async () => {
     const l = await asDataApi(data.admin.authUserId, (tx) => rpc<any>(tx, 'api_license'))
     assert.equal(l.phase, 'attiva')
     assert.equal(l.readOnly, false)

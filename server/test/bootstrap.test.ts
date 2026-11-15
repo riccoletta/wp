@@ -12,6 +12,7 @@ import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { asSystem, closeDb, initDb } from '../src/db.js'
 import { bootstrapAdmin, BootstrapError } from '../src/bootstrap.js'
+import { listPlatformOwners, promotePlatformOwner, PlatformOwnerError } from '../src/platform.js'
 
 /** Registra un'identità Supabase finta e ne restituisce l'id. */
 const addIdentity = (email: string) => asSystem(async (tx) => {
@@ -68,9 +69,9 @@ describe('primo amministratore', () => {
   })
 
   it('si rifiuta di creare un secondo amministratore senza consenso esplicito', async () => {
-    await addIdentity('secondo@example.test')
+    await addIdentity('altro-proprietario@example.test')
     await assert.rejects(
-      bootstrapAdmin({ email: 'secondo@example.test', firstName: 'Altro', lastName: 'Admin' }),
+      bootstrapAdmin({ email: 'altro-proprietario@example.test', firstName: 'Altro', lastName: 'Admin' }),
       (err: Error) => err instanceof BootstrapError && /Esiste già un amministratore/.test(err.message),
     )
     const n = await asSystem((tx) => tx.one<any>('select count(*)::int as n from app_users'))
@@ -79,7 +80,7 @@ describe('primo amministratore', () => {
 
   it('con --aggiungi dichiarato a mano il secondo amministratore si crea', async () => {
     const res = await bootstrapAdmin({
-      email: 'secondo@example.test', firstName: 'Altro', lastName: 'Admin', addition: true,
+      email: 'altro-proprietario@example.test', firstName: 'Altro', lastName: 'Admin', addition: true,
     })
     assert.equal(res.outcome, 'creato')
     assert.deepEqual(await roles(res.userId), ['admin'])
@@ -92,5 +93,53 @@ describe('primo amministratore', () => {
     await assert.rejects(
       bootstrapAdmin({ email: 'capo@example.test', firstName: ' ', lastName: 'B' }),
       (err: Error) => /obbligatori/i.test(err.message))
+  })
+})
+
+describe('proprietario della piattaforma', () => {
+  it('si rifiuta se l\'identità Supabase non esiste', async () => {
+    await assert.rejects(
+      promotePlatformOwner({ email: 'mai@example.test' }),
+      (err: Error) => err instanceof PlatformOwnerError && /Invite user/.test(err.message),
+    )
+  })
+
+  it('promuove una sola identità e la registra', async () => {
+    const identity = await addIdentity('proprietario@example.test')
+    const res = await promotePlatformOwner({ email: 'proprietario@example.test', note: 'contratto' })
+    assert.equal(res.outcome, 'promosso')
+    assert.equal(res.authUserId, identity)
+
+    const owners = await listPlatformOwners()
+    assert.deepEqual(owners.map((o) => o.email), ['proprietario@example.test'])
+    assert.equal(owners[0].note, 'contratto')
+  })
+
+  it('non promuove per sbaglio gli amministratori di società', async () => {
+    // `capo@example.test` è la segreteria creata dalle prove qui sopra: resta tale.
+    const owners = await listPlatformOwners()
+    assert.ok(owners.every((o) => o.email !== 'capo@example.test'))
+    const admins = await asSystem((tx) => tx.query<any>(
+      `select u.email from user_roles r join app_users u on u.id = r.user_id where r.role = 'admin'`))
+    assert.ok(admins.length > 0, 'gli amministratori di società ci sono ancora')
+    assert.ok(admins.every((a) => a.email !== 'proprietario@example.test'))
+  })
+
+  it('rilanciato sulla stessa identità non duplica nulla', async () => {
+    const res = await promotePlatformOwner({ email: 'proprietario@example.test' })
+    assert.equal(res.outcome, 'già-presente')
+    assert.equal((await listPlatformOwners()).length, 1)
+  })
+
+  it('si ferma davanti a un secondo proprietario senza consenso esplicito', async () => {
+    await addIdentity('secondo-proprietario@example.test')
+    await assert.rejects(
+      promotePlatformOwner({ email: 'secondo-proprietario@example.test' }),
+      (err: Error) => err instanceof PlatformOwnerError && /--aggiungi/.test(err.message),
+    )
+    assert.equal((await listPlatformOwners()).length, 1)
+
+    await promotePlatformOwner({ email: 'secondo-proprietario@example.test', addition: true })
+    assert.equal((await listPlatformOwners()).length, 2)
   })
 })

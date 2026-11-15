@@ -1,7 +1,8 @@
 # AGENTS.md — CAVEMAN MODE
 
 ## Missione
-**MAX DELIVERY / MIN TOKEN.** Gestionale pallanuoto per **una sola società**. FASE 1 = amministrazione
+**MAX DELIVERY / MIN TOKEN.** Gestionale pallanuoto. Da M10 è una **piattaforma multi-società**
+(una società = un cliente; le squadre restano dentro la società). FASE 1 = amministrazione
 (persone, ruoli, stagioni/squadre, tesseramenti, scadenze certificati, quote). FASE 2 solo su richiesta
 esplicita = piscine/spazi + calendario allenamenti ricorrenti. Prodotto NON social.
 Sicurezza e correttezza non si sacrificano mai per brevità.
@@ -16,7 +17,8 @@ Sicurezza e correttezza non si sacrificano mai per brevità.
 - **ONE SLICE:** una funzionalità completa UI → auth → DB → UI per volta.
 - **SMALL CONTEXT:** `rg`, `git diff`, file mirati. Mai dump di repo, log o `node_modules`.
 - **SMALL DIFF:** tocca solo i file necessari; riusa componenti e convenzioni esistenti.
-- **SIMPLE STACK:** niente microservizi, multi-tenant, astrazioni premature, dipendenze nuove senza motivo.
+- **SIMPLE STACK:** niente microservizi, astrazioni premature, dipendenze nuove senza motivo. Il
+  multi-società è `club_id` + policy RLS, non un'architettura a parte.
 - **REAL FLOWS:** persistenza verificata. Niente bottoni finti, mock spacciati per backend, successi inventati.
 - **FAST CHECKS:** `npm run check` + `npm test`, sempre con almeno un caso di accesso negato.
 - **NO DOC SPRAWL:** solo ROADMAP, AGENTS, README, migrazioni e test utili.
@@ -38,15 +40,19 @@ Sicurezza e correttezza non si sacrificano mai per brevità.
   scadenze certificati **senza file**, quote e pagamenti manuali, dashboard di contatori operativi.
 - **FASE 2 (mai prima dell'approvazione):** impianti/vasche/corsie, calendario ricorrente con conflitti
   ed eccezioni, `Europe/Rome` e ora legale. Disponibilità `Sì/No/Forse` solo se approvate a parte.
+- **M10 (approvato):** società clienti, proprietario della piattaforma, abbonamento per società.
 - **VIETATO in ogni fase:** registro presenze, convocazioni, report/statistiche/export, archivio
-  documenti o regolamenti, upload di certificati, feed/post/commenti/like/chat/DM, multi-club,
+  documenti o regolamenti, upload di certificati, feed/post/commenti/like/chat/DM,
   gateway di pagamento.
 - Contatori di scadenze e insoluti in dashboard ≠ modulo di reportistica. Nessuna tabella o schermata
   di FASE 2 durante la FASE 1.
 
 ## Sicurezza obbligatoria
-- Coach: solo le squadre assegnate. Atleta: solo i propri dati. Tutore: solo i minori collegati.
-  Admin/segreteria: tutto. Verifica ogni nuova tabella con un test di accesso negato.
+- Ogni dato appartiene a una società: fuori dalla società corrente non esiste, per nessuno.
+  Coach: solo le squadre assegnate. Atleta: solo i propri dati. Tutore: solo i minori collegati.
+  Admin/segreteria: tutta la **propria** società. Proprietario della piattaforma: le società e gli
+  abbonamenti, più l'ingresso dichiarato in una società. Verifica ogni nuova tabella con un test
+  di accesso negato.
 - Anagrafica atleta possibile **senza** account; l'invito è un atto separato.
 - Certificati: solo tipo/scadenza/stato. Mai diagnosi, referti, file.
 - Nessun segreto o dato personale reale in codice, test o seed. Orari `Europe/Rome`.

@@ -83,6 +83,40 @@ try {
   check('stato operativo della licenza calcolato dal database', typeof readOnly?.r === 'boolean',
     `sola lettura = ${readOnly?.r}`)
 
+  // --- Piattaforma multi-società (M10) ------------------------------------------
+  for (const [name, sql] of [
+    ['platform_owners', 'select 1 from platform_owners'],
+    ['club_sessions', 'select 1 from club_sessions'],
+  ] as const) {
+    const code = await refused(() => asDataApi(null, (t) => t.query(sql)))
+    check(`${name} non raggiungibile dalla Data API`, denied(code), `esito ${code}`)
+  }
+
+  const platformRpc = await refused(() => asDataApi(null, (t) => t.query('select api_platform_clubs()')))
+  check('portale della piattaforma chiuso a chi non è proprietario', denied(platformRpc),
+    `esito ${platformRpc}`)
+
+  const noClub = await asDataApi(null, (t) =>
+    t.one<{ c: string | null }>('select (select app_current_club())::text as c'))
+  check('senza identità non c\'è nessuna società corrente', noClub?.c == null,
+    `app_current_club()=${noClub?.c ?? 'null'}`)
+
+  const clubs = await asSystem((t) => t.one<{ n: string }>('select count(*)::text as n from clubs'))
+  const orphans = await asSystem((t) => t.one<{ n: string }>(
+    `select count(*)::text as n from information_schema.columns c
+      where c.table_schema = 'public' and c.column_name = 'club_id' and c.is_nullable = 'YES'`))
+  check('ogni dato di società ha una società', orphans?.n === '0',
+    `${clubs?.n} società, ${orphans?.n} colonne club_id annullabili`)
+
+  const senzaAbbonamento = await asSystem((t) => t.one<{ n: string }>(
+    'select count(*)::text as n from clubs c where not exists (select 1 from subscriptions s where s.club_id = c.id)'))
+  check('ogni società ha il suo abbonamento', senzaAbbonamento?.n === '0',
+    `${senzaAbbonamento?.n} senza abbonamento`)
+
+  const owners = await asSystem((t) => t.one<{ n: string }>(
+    'select count(*)::text as n from platform_owners'))
+  console.log(`INFO proprietari della piattaforma registrati: ${owners?.n}`)
+
   // --- `anon` non deve avere privilegi, oggi né dopo le migrazioni --------------
   if (isManagedPostgres()) {
     // Serve ad `admin:bootstrap`: senza lettura di auth.users non si può collegare

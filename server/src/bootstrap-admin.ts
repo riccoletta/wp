@@ -7,6 +7,7 @@ import { bootstrapAdmin, validateEmail } from './bootstrap.js'
 //   1) Pannello Supabase → Authentication → Users → Invite user (l'indirizzo qui sotto).
 //      La persona riceve l'email e imposta la password: la credenziale non passa di qui.
 //   2) npm run admin:bootstrap -- --email=nome@dominio.it --nome=Mario --cognome=Rossi
+//      (--societa=<slug> per una società diversa da `pallanuoto-milano`)
 //
 // Gli accessi successivi si creano per invito, dalla segreteria. Non esiste una pagina
 // di registrazione: sarebbe una porta aperta sul deploy appena fatto.
@@ -40,6 +41,7 @@ try {
     email,
     firstName,
     lastName,
+    clubSlug: args.get('societa') || args.get('società'),
     addition: args.get('aggiungi') === 'true',
   })
 
@@ -49,7 +51,7 @@ try {
     'ruolo-aggiunto': 'Account già presente: aggiunto il ruolo admin',
     'già-presente': 'Amministratore già presente: nessuna modifica',
   }[res.outcome]
-  console.log(`${message} — ${res.email} (${where}).`)
+  console.log(`${message} — ${res.email}, società ${res.clubName} (${where}).`)
 } catch (err) {
   console.error('Bootstrap non eseguito:', err instanceof Error ? err.message : err)
   process.exitCode = 1
