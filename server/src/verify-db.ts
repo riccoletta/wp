@@ -1,4 +1,5 @@
 import { asAnon, asDataApi, asSystem, closeDb, initDb, isManagedPostgres, pendingMigrations } from './db.js'
+import { refuseRemoteDatabase } from './remote-guard.js'
 
 // Prova sul database VERO (quello puntato da DATABASE_URL, altrimenti PGlite) che
 // l'impianto di sicurezza della Data API regga: anonimo che non raggiunge nulla,
@@ -19,6 +20,7 @@ const refused = (run: () => Promise<unknown>) =>
 const denied = (code: string) => code === '42501' || /permission denied/i.test(code)
 
 try {
+  refuseRemoteDatabase('npm run db:verify')
   await initDb({ migrate: false })
   console.log(isManagedPostgres() ? 'Database: PostgreSQL gestito (DATABASE_URL).' : 'Database: PGlite locale.')
 

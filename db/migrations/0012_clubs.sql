@@ -119,57 +119,43 @@ end $$;
 
 /* ============ 3) Nessun legame fra società diverse, mai, nemmeno per errore ========== */
 
--- Bersagli delle chiavi composite: `(id, club_id)` unico sui "padri".
-alter table people  add constraint people_id_club_key  unique (id, club_id);
-alter table seasons add constraint seasons_id_club_key unique (id, club_id);
-alter table teams   add constraint teams_id_club_key   unique (id, club_id);
-alter table dues    add constraint dues_id_club_key    unique (id, club_id);
-
-alter table app_users
-  add constraint app_users_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade;
-
-alter table teams
-  add constraint teams_season_club_fk foreign key (season_id, club_id)
-  references seasons (id, club_id) on delete cascade;
-
-alter table team_memberships
-  add constraint team_memberships_team_club_fk foreign key (team_id, club_id)
-  references teams (id, club_id) on delete cascade,
-  add constraint team_memberships_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade;
-
-alter table coach_assignments
-  add constraint coach_assignments_team_club_fk foreign key (team_id, club_id)
-  references teams (id, club_id) on delete cascade,
-  add constraint coach_assignments_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade;
-
-alter table guardian_links
-  add constraint guardian_links_guardian_club_fk foreign key (guardian_person_id, club_id)
-  references people (id, club_id) on delete cascade,
-  add constraint guardian_links_minor_club_fk foreign key (minor_person_id, club_id)
-  references people (id, club_id) on delete cascade;
-
-alter table registrations
-  add constraint registrations_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade,
-  add constraint registrations_season_club_fk foreign key (season_id, club_id)
-  references seasons (id, club_id) on delete cascade;
-
-alter table medical_expiries
-  add constraint medical_expiries_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade;
-
-alter table dues
-  add constraint dues_person_club_fk foreign key (person_id, club_id)
-  references people (id, club_id) on delete cascade,
-  add constraint dues_season_club_fk foreign key (season_id, club_id)
-  references seasons (id, club_id) on delete cascade;
-
-alter table payment_records
-  add constraint payment_records_due_club_fk foreign key (due_id, club_id)
-  references dues (id, club_id) on delete cascade;
+-- Bersagli delle chiavi composite `(id, club_id)` sui "padri", e poi le chiavi
+-- composite vere e proprie: un tesseramento, una rosa, un versamento o un legame
+-- tutore↔minore fra società diverse non è vietato dall'applicazione, è impossibile
+-- nel database. Ogni vincolo si aggiunge solo se non c'è già: questo file deve
+-- poter essere rieseguito senza fare danni.
+do $$
+declare
+  v record;
+  vincoli constant text[][] := array[
+    ['people',            'people_id_club_key',               'unique (id, club_id)'],
+    ['seasons',           'seasons_id_club_key',              'unique (id, club_id)'],
+    ['teams',             'teams_id_club_key',                'unique (id, club_id)'],
+    ['dues',              'dues_id_club_key',                 'unique (id, club_id)'],
+    ['app_users',         'app_users_person_club_fk',         'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['teams',             'teams_season_club_fk',             'foreign key (season_id, club_id) references seasons (id, club_id) on delete cascade'],
+    ['team_memberships',  'team_memberships_team_club_fk',    'foreign key (team_id, club_id) references teams (id, club_id) on delete cascade'],
+    ['team_memberships',  'team_memberships_person_club_fk',  'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['coach_assignments', 'coach_assignments_team_club_fk',   'foreign key (team_id, club_id) references teams (id, club_id) on delete cascade'],
+    ['coach_assignments', 'coach_assignments_person_club_fk', 'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['guardian_links',    'guardian_links_guardian_club_fk',  'foreign key (guardian_person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['guardian_links',    'guardian_links_minor_club_fk',     'foreign key (minor_person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['registrations',     'registrations_person_club_fk',     'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['registrations',     'registrations_season_club_fk',     'foreign key (season_id, club_id) references seasons (id, club_id) on delete cascade'],
+    ['medical_expiries',  'medical_expiries_person_club_fk',  'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['dues',              'dues_person_club_fk',              'foreign key (person_id, club_id) references people (id, club_id) on delete cascade'],
+    ['dues',              'dues_season_club_fk',              'foreign key (season_id, club_id) references seasons (id, club_id) on delete cascade'],
+    ['payment_records',   'payment_records_due_club_fk',      'foreign key (due_id, club_id) references dues (id, club_id) on delete cascade']
+  ];
+begin
+  for v in select vincoli[i][1] as tabella, vincoli[i][2] as nome, vincoli[i][3] as definizione
+             from generate_subscripts(vincoli, 1) as i
+  loop
+    if not exists (select 1 from pg_constraint where conname = v.nome) then
+      execute format('alter table public.%I add constraint %I %s', v.tabella, v.nome, v.definizione);
+    end if;
+  end loop;
+end $$;
 
 /* ===================== 4) Unicità: per società, non globali =============== */
 
@@ -412,24 +398,32 @@ end $$;
 -- `clubs`: il proprietario le vede tutte, l'utente di società vede la propria (gli
 -- serve il nome da mostrare). Scrive solo il proprietario. Nessuna cancellazione:
 -- una società non si elimina dall'interfaccia.
+drop policy if exists clubs_read on clubs;
 create policy clubs_read on clubs for select to app_user, authenticated
   using (app_is_platform_owner() or id in (select app_auth_clubs()));
+drop policy if exists clubs_ins on clubs;
 create policy clubs_ins on clubs for insert to authenticated
   with check (app_is_platform_owner());
+drop policy if exists clubs_upd on clubs;
 create policy clubs_upd on clubs for update to authenticated
   using (app_is_platform_owner()) with check (app_is_platform_owner());
 
 -- L'abbonamento si legge anche quando è scaduto o sospeso: è l'unica cosa che
 -- l'utente di una società chiusa deve poter vedere, insieme all'uscita.
+drop policy if exists subscriptions_read on subscriptions;
 create policy subscriptions_read on subscriptions for select to app_user, authenticated
   using (app_can_access_club(club_id));
+drop policy if exists subscriptions_ins on subscriptions;
 create policy subscriptions_ins on subscriptions for insert to authenticated
   with check (app_is_platform_owner());
+drop policy if exists subscriptions_upd on subscriptions;
 create policy subscriptions_upd on subscriptions for update to authenticated
   using (app_is_platform_owner()) with check (app_is_platform_owner());
 
+drop policy if exists subscription_events_read on subscription_events;
 create policy subscription_events_read on subscription_events for select to authenticated
   using (app_is_platform_owner());
+drop policy if exists subscription_events_ins on subscription_events;
 create policy subscription_events_ins on subscription_events for insert to authenticated
   with check (app_is_platform_owner());
 

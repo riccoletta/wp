@@ -1,5 +1,6 @@
 import { closeDb, initDb, isManagedPostgres } from './db.js'
 import { compare, readSnapshot, restore, verifySnapshot, writeSnapshot } from './backup.js'
+import { refuseRemoteDatabase } from './remote-guard.js'
 
 // Copia di sicurezza logica, verifica, confronto prima/dopo e recupero.
 //
@@ -24,6 +25,7 @@ for (const a of process.argv.slice(2)) {
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
 try {
+  refuseRemoteDatabase('npm run backup')
   await initDb({ migrate: false })
   const dove = isManagedPostgres() ? 'PostgreSQL gestito' : 'PGlite locale'
 

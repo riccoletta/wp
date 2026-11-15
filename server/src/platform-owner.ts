@@ -1,5 +1,6 @@
 import { closeDb, initDb, isManagedPostgres } from './db.js'
 import { listPlatformOwners, promotePlatformOwner } from './platform.js'
+import { refuseRemoteDatabase } from './remote-guard.js'
 
 // Proprietario della piattaforma. Atto unico e manuale, come le migrazioni.
 //
@@ -21,6 +22,7 @@ for (const a of process.argv.slice(2)) {
 }
 
 try {
+  refuseRemoteDatabase('npm run platform:owner')
   await initDb({ migrate: false })
 
   if (args.get('elenco') === 'true') {

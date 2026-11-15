@@ -1,4 +1,5 @@
 import { closeDb, initDb, isManagedPostgres, pendingMigrations, runMigrations } from './db.js'
+import { refuseRemoteDatabase } from './remote-guard.js'
 
 // Le migrazioni sono un atto separato dall'avvio dell'API: si lanciano a mano
 // (o in un passo di deploy dedicato), mai da più istanze in parallelo.
@@ -9,6 +10,7 @@ if (process.env.MIGRATION_DATABASE_URL?.trim()) {
 }
 
 try {
+  refuseRemoteDatabase('npm run migrate')
   await initDb({ migrate: false })
   const todo = await pendingMigrations()
   if (!todo.length) {

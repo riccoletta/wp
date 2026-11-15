@@ -64,6 +64,7 @@ Per lavorare sul database (migrazioni, test, verifica) servono anche `DATABASE_U
 | `npm run migrate` | applica le migrazioni mancanti, in una transazione sola |
 | `npm run db:verify` | prova sul database vero che la sicurezza regga. Non scrive nulla |
 | `npm run backup` | copia di sicurezza logica, verificata; `--confronta` e `--ripristina` |
+| `npm run deploy:sql` | rigenera `db/deploy/02-migrazione-m10.sql` dalle migrazioni |
 | `npm run seed` | dati sintetici per lo sviluppo. Rifiutato in produzione |
 | `npm run admin:bootstrap` | collega il primo amministratore di una società alla sua identità Supabase |
 | `npm run platform:owner` | promuove una identità a proprietario della piattaforma (`--elenco` per vederli) |
@@ -161,24 +162,30 @@ file e chiavi esterne, anche composite, risolte dentro la copia — e il giro co
 `sessions` e `login_attempts` si contano ma non si copiano: stato effimero dell'epoca
 Express, con token in chiaro che in un file non devono finire.
 
-### Passaggio a multi-società (migrazione `0012`/`0013`)
+### Lo schema remoto si cambia dal pannello
 
-Additiva: nessuna migrazione precedente è stata riscritta, nessuna tabella ricreata,
-nessun dato cancellato. `0012` crea **Pallanuoto Milano** come prima società e vi
-associa tutto quello che c'era, trasformando la licenza unica nel suo abbonamento.
+**Dal terminale non si parla con il database remoto.** `npm run migrate`, `db:verify`,
+`platform:owner` e `backup` servono allo sviluppo locale su PGlite e alle prove: se li si
+punta su un database remoto si fermano prima di aprire la connessione
+(`ALLOW_REMOTE_DB=true` per dichiarare un'eccezione).
 
-```bash
-npm run migrate      # prima su un database di prova
-npm run db:verify
-npm test
-# poi, solo dopo approvazione esplicita, sul progetto di produzione:
-npm run migrate
-npm run db:verify
-npm run platform:owner -- --email=<proprietario>
-```
+Le migrazioni si applicano incollandole nel **SQL Editor** di Supabase. Gli script sono in
+`db/deploy/`, con il loro ordine di esecuzione in `db/deploy/README.md`:
 
-Il passo `platform:owner` è l'unico che aggiunge un potere nuovo: promuove **una sola**
-identità già esistente in Supabase Auth e non tocca gli amministratori di società.
+| # | File | Scrive? |
+| --- | --- | --- |
+| 1 | `01-ispezione.sql` — da dove si parte | no |
+| 2 | `02-migrazione-m10.sql` — applica `0012` + `0013` | solo schema |
+| 3 | `03-verifica.sql` — 32 controlli OK/NO | no |
+| 4 | `04-proprietario.sql` — promuove il proprietario della piattaforma | una riga |
+
+Il passo 2 **non si scrive a mano**: lo genera `npm run deploy:sql` dalle migrazioni del
+repository, così il database remoto e il codice non possono divergere (un test fallisce se
+lo script è vecchio). È rieseguibile senza danni, non cancella nulla, e il SQL Editor lo
+manda come richiesta unica: PostgreSQL lo esegue in una sola transazione.
+
+Il passo 4 è l'unico che aggiunge un potere nuovo: promuove **una sola** identità già
+esistente in Supabase Auth e non tocca gli amministratori di società.
 
 ### Che cosa è esposto dalla Data API
 

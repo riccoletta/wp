@@ -409,13 +409,30 @@ niente backend Express, niente gateway di pagamento.
       (20 verifiche su 20, comprese quelle nuove di piattaforma).
 - [ ] Playwright sui flussi multi-società: **non eseguito**, manca l'ambiente Supabase di prova.
 
-### Ordine di applicazione in produzione (richiede approvazione esplicita)
-1. `npm run migrate` su un database di prova, poi `npm run db:verify` e `npm test`.
-2. Solo dopo approvazione: `npm run migrate` sul progetto `pnm` (additiva, nessun reset).
-3. `npm run platform:owner -- --email=<proprietario>` con la connessione diretta del ruolo
-   proprietario: promuove **una sola** identità, già esistente in Supabase Auth.
-4. Verifica: `/admin` elenca Pallanuoto Milano con i contatori giusti; un admin di società
-   riceve `42501` sulle operazioni di piattaforma.
+### M10f — Messa in opera dal pannello Supabase [P0]
+
+Decisione del 2026-11-15 (**D28**): il database remoto non si tocca più dal terminale.
+Niente `DATABASE_URL`, niente certificati, niente pooler: lo schema si cambia incollando
+SQL nel **SQL Editor** di Supabase. Gli strumenti locali restano per PGlite e per le prove.
+
+- [x] `db/deploy/01-ispezione.sql` — sola lettura: migrazioni, conteggi, relazioni, account,
+      identità Supabase, licenza, stato di M10. Un'unica tabella di risultati.
+- [x] `db/deploy/02-migrazione-m10.sql` — `0012` + `0013` con controlli preliminari e
+      registrazione in `schema_migrations`. **Generato** da `npm run deploy:sql` dalle
+      migrazioni vere: il repository e il database non possono divergere.
+- [x] `db/deploy/03-verifica.sql` — 32 controlli con esito OK/NO: dati conservati (confronto
+      con i numeri del passo 1), amministratore collegato a Supabase Auth, ogni riga assegnata
+      alla società, vincoli e policy di isolamento, abbonamento ereditato dalla licenza.
+- [x] `db/deploy/04-proprietario.sql` — promozione di `riccardocoletta@yahoo.it`, da lanciare
+      **a parte e solo quando approvato**. Si ferma se esiste già un altro proprietario.
+- [x] Migrazioni `0012`/`0013` rese **idempotenti** (vincoli e policy guardati) e provate
+      rieseguendole sullo stesso database: nessun doppione, nessun dato toccato.
+- [x] I quattro script girano davvero in una prova (`server/test/deploy-sql.test.ts`), su un
+      PostgreSQL che parte pre-M10 come il progetto remoto.
+- [x] `npm run migrate`, `db:verify`, `platform:owner` e `backup` si rifiutano di aprire una
+      connessione remota (`ALLOW_REMOTE_DB=true` per dichiarare l'eccezione).
+- [ ] Esecuzione dei passi 1→3 sul progetto `pnm`: la fa il committente dal pannello.
+- [ ] Passo 4 (proprietario della piattaforma): solo dopo che il passo 3 dice TUTTO OK.
 
 ---
 
@@ -645,3 +662,9 @@ prossimo: approvare le tre proposte residue in `CODE_AUDIT.md` | nessun blocker 
 - D27 — **Abbonamento scaduto = porta chiusa, non sola lettura.** D13 valeva per la licenza del
   software su un'installazione sola. Con più clienti, scaduto o sospeso significa niente dati
   operativi: restano l'accesso, lo stato dell'abbonamento e l'uscita, e tutti i dati al loro posto.
+- D28 — **Lo schema remoto si cambia dal pannello, non dal portatile.** Il terminale non
+  raggiunge PostgreSQL di Supabase senza CA, pooler e certificati: tre cose che si rompono
+  e che non aggiungono niente a un atto che si fa quattro volte l'anno. Gli script stanno in
+  `db/deploy/`, generati dalle migrazioni del repository perché non possano divergere, e
+  `npm run migrate`/`db:verify`/`platform:owner`/`backup` si rifiutano di parlare con un
+  database remoto. In locale non cambia nulla: PGlite e le prove restano quelle.

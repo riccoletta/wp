@@ -10,7 +10,8 @@
     "db:verify": "tsx src/verify-db.ts",
     "admin:bootstrap": "tsx src/bootstrap-admin.ts",
     "platform:owner": "tsx src/platform-owner.ts",
-    "backup": "tsx src/backup-cli.ts"
+    "backup": "tsx src/backup-cli.ts",
+    "deploy:sql": "tsx src/deploy-sql-cli.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
