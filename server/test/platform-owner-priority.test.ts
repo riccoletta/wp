@@ -15,7 +15,7 @@ before(async () => {
   await initDb({ memory: true })
   const milano = await seedDemo()
   authId = milano.admin.authUserId!
-  await makePlatformOwner(authId, 'owner-and-admin@example.test')
+  await makePlatformOwner(authId, 'segreteria@example.test')
 })
 after(async () => { await closeDb() })
 
@@ -23,7 +23,7 @@ describe('platform owner e admin di società con la stessa identità', () => {
   it('api_me privilegia platformOwner anche quando app_uid esiste', async () => {
     const me = await call<any>(authId, 'api_me')
     assert.equal(me.platformOwner, true)
-    assert.equal(me.email, 'owner-and-admin@example.test')
+    assert.equal(me.email, 'segreteria@example.test')
   })
 
   it('il proprietario conserva il proprio ruolo entrando nella società', async () => {
