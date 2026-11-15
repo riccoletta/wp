@@ -15,7 +15,8 @@
     "db:verify": "npm run db:verify --workspace=server",
     "admin:bootstrap": "npm run admin:bootstrap --workspace=server --",
     "e2e": "playwright test",
-    "platform:owner": "npm run platform:owner --workspace=server --"
+    "platform:owner": "npm run platform:owner --workspace=server --",
+    "backup": "npm run backup --workspace=server --"
   },
   "engines": {
     "node": "22.x"

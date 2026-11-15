@@ -16,3 +16,6 @@ db/e2e-data/
 test-results/
 playwright-report/
 .vercel
+
+# Copie di sicurezza: dati veri, mai nel repository.
+db/backups/

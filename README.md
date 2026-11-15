@@ -63,6 +63,7 @@ Per lavorare sul database (migrazioni, test, verifica) servono anche `DATABASE_U
 | `npm test` | test di integrazione sulle policy RLS e sui flussi FASE 1 (PGlite) |
 | `npm run migrate` | applica le migrazioni mancanti, in una transazione sola |
 | `npm run db:verify` | prova sul database vero che la sicurezza regga. Non scrive nulla |
+| `npm run backup` | copia di sicurezza logica, verificata; `--confronta` e `--ripristina` |
 | `npm run seed` | dati sintetici per lo sviluppo. Rifiutato in produzione |
 | `npm run admin:bootstrap` | collega il primo amministratore di una società alla sua identità Supabase |
 | `npm run platform:owner` | promuove una identità a proprietario della piattaforma (`--elenco` per vederli) |
@@ -143,6 +144,22 @@ API, che il portale della piattaforma sia chiuso a chi non è proprietario, che 
 identità non ci sia nessuna società corrente, che ogni dato abbia una società e ogni
 società il suo abbonamento, che i ruoli non siano assegnabili da sé e che `anon` non
 abbia privilegi.
+
+### Copia di sicurezza prima di migrare
+
+```bash
+npm run backup                                   # db/backups/backup-<data>.json, verificato
+npm run backup -- --confronta=<file>             # conteggi, relazioni e identità: prima vs adesso
+npm run backup -- --ripristina=<file> --conferma # rimette dentro le righe mancanti
+```
+
+Non sostituisce `pg_dump` né i backup della piattaforma: è una fotografia completa dei
+dati di `public` più la mappa delle identità Supabase (id, email, date — **mai** gli hash
+delle password, che restano in Supabase Auth). Si verifica da sé — conteggi riletti dal
+file e chiavi esterne, anche composite, risolte dentro la copia — e il giro completo
+(copia → perdita → ripristino → nessuna differenza) è coperto da un test.
+`sessions` e `login_attempts` si contano ma non si copiano: stato effimero dell'epoca
+Express, con token in chiaro che in un file non devono finire.
 
 ### Passaggio a multi-società (migrazione `0012`/`0013`)
 
