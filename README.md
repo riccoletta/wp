@@ -1,8 +1,12 @@
 # Gestionale Società di Pallanuoto
 
-Gestionale web privato per **una sola società di pallanuoto**. In italiano, mobile-first.
+Gestionale web privato per società di pallanuoto. In italiano, mobile-first.
 La FASE 1 copre l'amministrazione: anagrafiche, ruoli, stagioni e squadre, tesseramenti,
 scadenze dei certificati medici e quote con pagamenti registrati a mano.
+
+Da M10 è una **piattaforma multi-società**: ogni società cliente ha il suo ambiente
+(`/club/<slug>`) e il suo abbonamento; il proprietario della piattaforma ha un portale
+separato (`/admin`) da cui crea le società, ne gestisce l'abbonamento e vi entra.
 
 Le specifiche sono in `MASTER_PROMPT_PALLANUOTO.md`; lo stato dei lavori in `ROADMAP.md`;
 le regole per chi ci lavora in `AGENTS.md`.
@@ -23,8 +27,8 @@ Supabase Auth ──▶ JWT ──▶ PostgREST (ruolo `authenticated`, auth.uid
                                ▲
                                │  chiave di servizio, solo server-side
                     Supabase Edge Functions
-                      • club-invite    (inviti, solo segreteria)
-                      • license-owner  (licenza, solo proprietario)
+                      • club-invite    (inviti, solo segreteria della società)
+                      • license-owner  (licenza unica pre-M10, superata dagli abbonamenti)
 ```
 
 Non c'è un backend applicativo da mantenere. Non ci sono credenziali PostgreSQL nel
@@ -60,7 +64,8 @@ Per lavorare sul database (migrazioni, test, verifica) servono anche `DATABASE_U
 | `npm run migrate` | applica le migrazioni mancanti, in una transazione sola |
 | `npm run db:verify` | prova sul database vero che la sicurezza regga. Non scrive nulla |
 | `npm run seed` | dati sintetici per lo sviluppo. Rifiutato in produzione |
-| `npm run admin:bootstrap` | collega il primo amministratore alla sua identità Supabase |
+| `npm run admin:bootstrap` | collega il primo amministratore di una società alla sua identità Supabase |
+| `npm run platform:owner` | promuove una identità a proprietario della piattaforma (`--elenco` per vederli) |
 | `npm run e2e` | prove di interfaccia in Chromium (serve un progetto Supabase di prova) |
 
 `npm test` gira su **PGlite**, un PostgreSQL vero in-process: le query vengono eseguite
@@ -92,11 +97,29 @@ primo utente, sarebbe una porta aperta sul deploy appena fatto.
 
 ```bash
 npm run admin:bootstrap -- --email=nome@dominio.it --nome=Mario --cognome=Rossi
+# --societa=<slug> per una società diversa da `pallanuoto-milano`
 ```
 
-Il comando crea `people` + `app_users` + `user_roles('admin')` in una transazione sola e
-si rifiuta di creare un secondo amministratore (salvo `--aggiungi` dichiarato a mano).
-Gli accessi successivi si creano per invito, dalla segreteria.
+Il comando crea `people` + `app_users` + `user_roles('admin')` **in quella società**, in
+una transazione sola, e si rifiuta di creare un secondo amministratore della stessa
+società (salvo `--aggiungi` dichiarato a mano). Gli accessi successivi si creano per
+invito, dalla segreteria.
+
+### Proprietario della piattaforma
+
+È un'altra cosa dall'amministratore di società, e non si diventa l'uno dall'altro.
+Non sta in `user_roles`: sta in `platform_owners`, tabella **senza GRANT per nessun
+ruolo della Data API**. L'unica via è questo comando, con la connessione diretta del
+ruolo proprietario del database:
+
+```bash
+npm run platform:owner -- --email=nome@dominio.it --nota="contratto 2026"
+npm run platform:owner -- --elenco
+```
+
+Promuove **solo** l'indirizzo indicato, registra data e nota, è idempotente e si ferma
+davanti a un secondo proprietario salvo `--aggiungi`. Se quell'identità è anche la
+segreteria di una società lo dice, e i due poteri restano distinti.
 
 ## Database
 
@@ -114,15 +137,43 @@ npm run db:verify    # verifica la sicurezza sul database realmente configurato
 ```
 
 `npm run db:verify` prova, sul database vero: che l'anonimo non raggiunga nulla, che
-l'identità arrivi da `auth.uid()`, che `sessions`, `login_attempts`, `invites` e
-`password_hash` siano irraggiungibili dalla Data API, che la licenza non sia scrivibile
-dal club, che i ruoli non siano assegnabili da sé e che `anon` non abbia privilegi.
+l'identità arrivi da `auth.uid()`, che `sessions`, `login_attempts`, `invites`,
+`password_hash`, `platform_owners` e `club_sessions` siano irraggiungibili dalla Data
+API, che il portale della piattaforma sia chiuso a chi non è proprietario, che senza
+identità non ci sia nessuna società corrente, che ogni dato abbia una società e ogni
+società il suo abbonamento, che i ruoli non siano assegnabili da sé e che `anon` non
+abbia privilegi.
+
+### Passaggio a multi-società (migrazione `0012`/`0013`)
+
+Additiva: nessuna migrazione precedente è stata riscritta, nessuna tabella ricreata,
+nessun dato cancellato. `0012` crea **Pallanuoto Milano** come prima società e vi
+associa tutto quello che c'era, trasformando la licenza unica nel suo abbonamento.
+
+```bash
+npm run migrate      # prima su un database di prova
+npm run db:verify
+npm test
+# poi, solo dopo approvazione esplicita, sul progetto di produzione:
+npm run migrate
+npm run db:verify
+npm run platform:owner -- --email=<proprietario>
+```
+
+Il passo `platform:owner` è l'unico che aggiunge un potere nuovo: promuove **una sola**
+identità già esistente in Supabase Auth e non tocca gli amministratori di società.
 
 ### Che cosa è esposto dalla Data API
 
-| Esposto in lettura (sotto RLS) | Esposto in scrittura (solo admin, solo con licenza operativa) | Mai esposto |
+| Esposto in lettura (sotto RLS) | Esposto in scrittura (solo admin, solo con abbonamento operativo) | Mai esposto |
 | --- | --- | --- |
-| `people`, `guardian_links`, `seasons`, `teams`, `team_memberships`, `coach_assignments`, `registrations`, `medical_expiries`, `dues`, `payment_records`, `dues_status`, `license`, `user_roles`, e di `app_users` le sole colonne non sensibili | tutte le tabelle del club, tramite le policy `*_ins` / `*_upd` / `*_del` | `sessions`, `login_attempts`, `invites`, `app_users.password_hash`, scrittura su `license` e su `user_roles` |
+| `people`, `guardian_links`, `seasons`, `teams`, `team_memberships`, `coach_assignments`, `registrations`, `medical_expiries`, `dues`, `payment_records`, `dues_status`, `user_roles`, `clubs` e `subscriptions` della propria società, e di `app_users` le sole colonne non sensibili | tutte le tabelle della società, tramite le policy `*_ins` / `*_upd` / `*_del`; `clubs` e `subscriptions` solo per il proprietario della piattaforma | `sessions`, `login_attempts`, `invites`, `app_users.password_hash`, `platform_owners`, `club_sessions`, scrittura su `user_roles` |
+
+Ogni riga di dati porta `club_id` e **ogni policy passa da `app_club_open(club_id)`**:
+fuori dalla società in cui si è dichiarato di entrare i dati non esistono, nemmeno per
+contarli. Le chiavi esterne sono composite `(figlio, club_id) → (padre, club_id)`:
+legare fra loro righe di società diverse non è vietato dall'applicazione, è impossibile
+nel database.
 
 I privilegi sono **GRANT espliciti**: `EXECUTE` è revocato a `PUBLIC`, quindi una funzione
 nuova nello schema `public` non diventa un endpoint RPC per distrazione.
@@ -168,44 +219,33 @@ informazione clinica. I minori sono visibili solo alla segreteria, ai tutori col
 all'allenatore della loro squadra. Questa è minimizzazione dei dati, non una dichiarazione
 di conformità GDPR: quella richiede una verifica legale.
 
-## Licenza d'uso annuale
+## Abbonamento per società
 
-La licenza è una riga sola nella tabella `license`: scadenza, giorni di tolleranza e stato
+Ogni società ha una riga in `subscriptions`: scadenza, giorni di tolleranza e stato
 (`attiva` / `sospesa`). Lo stato operativo è **derivato**, mai scritto a mano:
 
-| Situazione | Accesso |
+| Situazione | Accesso della società |
 | --- | --- |
 | In corso di validità | completo |
 | Entro 30 giorni dalla scadenza | completo, con avviso in testata |
-| Scaduta, entro la tolleranza | completo, con avviso in testata |
-| Tolleranza finita, oppure sospesa | **sola lettura**: si consulta tutto, non si scrive nulla |
+| Scaduto, entro la tolleranza | completo, con avviso in testata |
+| Tolleranza finita, oppure sospeso | **nessun dato operativo**: restano accesso, motivo e uscita |
 
-**Il blocco è nel database, non nel browser.** Le policy di scrittura chiamano
-`app_can_write()`, che è `admin` *e* licenza operativa: un utente autenticato che chiama
-la REST API di Supabase a mano incontra lo stesso muro dell'interfaccia, con lo stesso
-messaggio italiano. Le letture non sono toccate: i dati restano consultabili ed
-estraibili. **Nessun dato viene mai cancellato alla scadenza.**
+**Il blocco è nel database, non nel browser.** Le policy passano da `app_club_open()` in
+lettura e da `app_can_write()` in scrittura: un utente autenticato che chiama la REST API
+di Supabase a mano incontra lo stesso muro dell'interfaccia, con lo stesso messaggio
+italiano. **Nessun dato viene mai cancellato o archiviato**: tornano tutti visibili alla
+riattivazione. Il proprietario della piattaforma entra anche in una società sospesa,
+altrimenti non potrebbe rimetterla in piedi.
 
-Rinnovo, sospensione e riattivazione sono riservati al **proprietario del software** e non
-passano da un account del club: `license` non ha GRANT di scrittura per `authenticated`,
-quindi nemmeno l'admin può toccarla. Il canale è la Edge Function `license-owner`,
-autenticata dal token di servizio `LICENSE_OWNER_TOKEN` (header `x-license-token`) tenuto
-nei segreti di Supabase; se la variabile è vuota il canale è chiuso.
+Rinnovo, sospensione e riattivazione sono riservati al **proprietario della piattaforma**
+e si fanno dal portale `/admin`: le RPC `api_platform_*` verificano `platform_owners` e le
+policy di `clubs`/`subscriptions` non concedono scrittura a nessun altro. Nemmeno la
+segreteria può allungarsi l'abbonamento. Ogni atto lascia una riga in
+`subscription_events` (chi, quando, che cosa).
 
-```bash
-FN=https://<project-ref>.supabase.co/functions/v1/license-owner
-curl -s $FN -H "x-license-token: $LICENSE_OWNER_TOKEN" \
-  -H 'content-type: application/json' -d '{"action":"state"}'
-curl -s $FN -H "x-license-token: $LICENSE_OWNER_TOKEN" \
-  -H 'content-type: application/json' -d '{"action":"renew","expiresOn":"2027-11-11","graceDays":15}'
-curl -s $FN -H "x-license-token: $LICENSE_OWNER_TOKEN" \
-  -H 'content-type: application/json' -d '{"action":"suspend","note":"mancato pagamento"}'
-curl -s $FN -H "x-license-token: $LICENSE_OWNER_TOKEN" \
-  -H 'content-type: application/json' -d '{"action":"reactivate"}'
-```
-
-Rinnovo e riattivazione restano atti distinti: `renew` sposta la scadenza, `reactivate`
-toglie la sospensione.
+La vecchia licenza unica (tabella `license`, Edge Function `license-owner`) resta solo
+come storia: `0012` ne ha copiato stato e date nell'abbonamento della prima società.
 
 ## Prove di interfaccia
 

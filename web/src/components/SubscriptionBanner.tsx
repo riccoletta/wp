@@ -1,9 +1,9 @@
-import { useApi } from './ui'
-import { getLicense, type License } from '../lib/data'
+import { useClub } from '../lib/club'
 
 /**
- * Avviso sullo stato della licenza. È solo informativo: il blocco delle scritture
- * lo applica il database con le policy di scrittura, non questa fascia.
+ * Avviso sullo stato dell'abbonamento della società. È solo informativo: a chiudere
+ * la società quando l'abbonamento è fermo sono le policy del database, non questa
+ * fascia. Durante la tolleranza si lavora come sempre, con l'avviso in testata.
  */
 const tones: Record<string, string> = {
   in_scadenza: 'border-amber-300 bg-amber-50 text-amber-900',
@@ -12,14 +12,15 @@ const tones: Record<string, string> = {
   sospesa: 'border-red-300 bg-red-50 text-red-900',
 }
 
-export default function LicenseBanner() {
-  const { data } = useApi<License>(getLicense)
+export default function SubscriptionBanner() {
+  const { subscription } = useClub()
+  const data = subscription.data
   if (!data?.message) return null
   return (
     <div role="status" aria-live="polite"
       className={`border-b px-4 py-2 text-sm ${tones[data.phase] ?? 'border-slate-200 bg-slate-50'}`}>
       <p className="mx-auto max-w-6xl">
-        <span className="font-semibold">{data.readOnly ? 'Sola lettura — ' : 'Avviso — '}</span>
+        <span className="font-semibold">{data.blocked ? 'Società chiusa — ' : 'Avviso — '}</span>
         {data.message}
       </p>
     </div>

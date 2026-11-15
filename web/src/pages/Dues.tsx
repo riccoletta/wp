@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { errorMessage, addPayment, deletePayment, getDue, listDues, listSeasons,
   type Due, type DueDetail as DueDetailData, type Season } from '../lib/data'
 import { useAuth } from '../lib/auth'

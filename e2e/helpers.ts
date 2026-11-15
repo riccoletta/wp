@@ -18,6 +18,14 @@ export const PASSWORD = (() => {
   return v
 })()
 
+/**
+ * La società di prova. Da M10 ogni pagina del gestionale sta sotto `/club/<slug>`:
+ * l'indirizzo digitato a mano continua a non aprire nulla di più, perché a filtrare
+ * sono le policy, ma per arrivare alla pagina giusta serve il prefisso.
+ */
+export const CLUB = process.env.E2E_CLUB_SLUG ?? 'pallanuoto-milano'
+export const clubPath = (path: string) => `/club/${CLUB}${path === '/' ? '' : path}`
+
 /** Entra davvero dal form di login e attende la dashboard. */
 export async function login(page: Page, email: string) {
   await page.goto('/accedi')

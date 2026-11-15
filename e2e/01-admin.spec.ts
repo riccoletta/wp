@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ACCOUNTS, login } from './helpers'
+import { ACCOUNTS, clubPath, login } from './helpers'
 
 /**
  * Ciclo completo della segreteria cliccato in un browser vero:
@@ -114,7 +114,7 @@ test('uscire riporta al login e chiude la sessione', async ({ page }) => {
   await login(page, ACCOUNTS.admin)
   await page.getByRole('button', { name: 'Esci' }).click()
   await expect(page).toHaveURL(/\/accedi$/)
-  await page.goto('/persone')
+  await page.goto(clubPath('/persone'))
   await expect(page).toHaveURL(/\/accedi$/)
 })
 

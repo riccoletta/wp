@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { useApi, Async, Card, Badge } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { getDashboard, type DashboardData } from '../lib/data'

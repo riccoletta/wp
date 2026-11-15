@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { Link } from '../lib/club'
 import {
   errorMessage, addGuardian, createDue, deleteMedical, getPerson, invitePerson,
   listSeasons, removeGuardian, saveMedical, saveRegistration, updatePerson,

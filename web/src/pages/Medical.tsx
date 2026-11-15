@@ -1,4 +1,5 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { listMedical, type MedicalRow } from '../lib/data'
 import { Async, Button, Card, Table, useApi } from '../components/ui'
 import { MEDICAL_LABELS, formatDate } from '../lib/format'

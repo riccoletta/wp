@@ -19,6 +19,16 @@ language sql stable security definer set search_path = public as $$
   select auth.uid()
 $$;
 
+-- L'email dell'identità, anche quando non si è ancora scelta una società: senza
+-- società corrente `app_users` non è leggibile, e `api_me()` non avrebbe nemmeno
+-- un nome da mostrare nella pagina di scelta.
+create or replace function app_identity_email() returns text
+language sql stable security definer set search_path = public as $$
+  select u.email from app_users u
+   where u.auth_user_id = auth.uid() and u.active
+   order by u.created_at limit 1
+$$;
+
 create or replace function app_platform_owner_email() returns text
 language sql stable security definer set search_path = public as $$
   select o.email from platform_owners o where o.auth_user_id = auth.uid()
@@ -108,6 +118,13 @@ language sql stable security invoker set search_path = public as $$
         'platformOwner', true,
         'club', (select json_build_object('id', c.id, 'name', c.name, 'slug', c.slug)
                    from clubs c where c.id = app_current_club()))
+    -- Identità collegata a più società e nessuna ancora scelta: esiste, ma non è
+    -- ancora "dentro" nessuna. Il client la manda a scegliere.
+    when app_identity_email() is not null then
+      json_build_object(
+        'userId', null, 'personId', null, 'email', app_identity_email(),
+        'firstName', '', 'lastName', '', 'roles', '[]'::json,
+        'platformOwner', false, 'club', null)
     else null end
 $$;
 

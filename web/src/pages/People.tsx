@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { errorMessage, createPerson, listPeople, updatePerson, type Person } from '../lib/data'
 import { useAuth } from '../lib/auth'
 import { Async, Badge, Button, Card, Field, Input, Modal, Select, Table, useApi } from '../components/ui'

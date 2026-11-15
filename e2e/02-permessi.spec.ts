@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ACCOUNTS, login, navLabels } from './helpers'
+import { ACCOUNTS, clubPath, login, navLabels } from './helpers'
 
 /**
  * Accessi negati visti dall'interfaccia. Quello che manca qui manca perché la
@@ -19,10 +19,10 @@ test('l\'allenatore vede solo la propria squadra e nessuna quota', async ({ page
   await expect(page.getByRole('link', { name: 'Gialli Chiara' })).toHaveCount(0)
 
   // L'URL digitato a mano non apre nulla di più: la lista arriva vuota dal database.
-  await page.goto('/quote')
+  await page.goto(clubPath('/quote'))
   await expect(page.getByText('Nessuna quota.')).toBeVisible()
 
-  await page.goto('/squadre')
+  await page.goto(clubPath('/squadre'))
   await expect(page.getByRole('link', { name: 'Under 16' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Prima Squadra' })).toHaveCount(0)
 })
@@ -37,7 +37,7 @@ test('l\'atleta vede solo la propria posizione', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Neri Sofia' })).toHaveCount(0)
   await expect(page.getByText('La tua posizione.', { exact: false })).toBeVisible()
 
-  await page.goto('/scadenze')
+  await page.goto(clubPath('/scadenze'))
   await expect(page.getByText('Verdi Luca')).toBeVisible()
   await expect(page.getByText('Neri Sofia')).toHaveCount(0)
 })

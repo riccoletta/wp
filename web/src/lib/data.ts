@@ -56,13 +56,23 @@ async function rpcRequired<T>(fn: string, args: Record<string, unknown> = {}): P
 
 export type Role = 'admin' | 'coach' | 'athlete' | 'guardian'
 
+export interface Club {
+  id: string
+  name: string
+  slug: string
+}
+
 export interface Me {
-  userId: string
-  personId: string
+  userId: string | null
+  personId: string | null
   email: string
   roles: Role[]
   firstName: string
   lastName: string
+  /** Proprietario della piattaforma: non è un ruolo di società, è un'altra cosa. */
+  platformOwner: boolean
+  /** Società in cui si sta lavorando. `null` per il proprietario fuori da una società. */
+  club: Club | null
 }
 
 export interface Person {
@@ -141,18 +151,30 @@ export interface Payment {
   note: string | null
 }
 
-export type LicensePhase = 'attiva' | 'in_scadenza' | 'tolleranza' | 'scaduta' | 'sospesa'
+export type SubscriptionPhase = 'attiva' | 'in_scadenza' | 'tolleranza' | 'scaduta' | 'sospesa'
 
-export interface License {
+/** Stato DERIVATO dell'abbonamento di una società: lo calcola il database. */
+export interface Subscription {
   status: 'attiva' | 'sospesa'
   expiresOn: string
   graceDays: number
   graceUntil: string
   daysLeft: number
   graceDaysLeft: number
-  phase: LicensePhase
+  phase: SubscriptionPhase
   readOnly: boolean
+  /** Scaduto oltre la tolleranza o sospeso: la società non è consultabile. */
+  blocked: boolean
+  note: string | null
   message: string | null
+}
+
+export interface PlatformClub extends Club {
+  createdAt: string
+  athletes: number
+  teams: number
+  admins: number
+  subscription: Subscription
 }
 
 export interface PersonDetail extends Person {
@@ -192,11 +214,40 @@ export interface DashboardData {
   }
 }
 
-/* ========================== Identità e licenza ============================ */
+/* ===================== Identità, società, abbonamento ===================== */
 
 export const getMe = () => rpcRequired<Me>('api_me')
-export const getLicense = () => rpcRequired<License>('api_license')
 export const getDashboard = () => rpcRequired<DashboardData>('api_dashboard')
+
+/** Lo stato dell'abbonamento della società corrente. `null` se non si è in nessuna. */
+export const getSubscription = () => rpc<Subscription | null>('api_subscription')
+
+/** Le società in cui si può entrare: la propria, o tutte per il proprietario. */
+export const listMyClubs = () => rpc<Club[]>('api_my_clubs')
+
+/**
+ * Entrare in una società è un atto dichiarato che il database registra: da qui in
+ * poi ogni policy filtra su questa scelta. L'indirizzo nel browser non decide nulla,
+ * e su una società non propria questa chiamata è respinta.
+ */
+export const enterClub = (slug: string) => rpcRequired<Club>('api_club_enter', { p_slug: slug })
+
+export const leaveClub = () => rpc('api_club_leave')
+
+/* ==================== Portale del proprietario (piattaforma) ============== */
+
+export const listPlatformClubs = () => rpc<PlatformClub[]>('api_platform_clubs')
+
+export const createClub = (c: { name: string; slug: string; expiresOn: string | null }) =>
+  rpc<{ id: string; slug: string }>('api_platform_club_create',
+    { p_name: c.name, p_slug: c.slug, p_expires: c.expiresOn })
+
+export type SubscriptionAction = 'rinnovata' | 'sospesa' | 'riattivata'
+
+export const setSubscription = (clubId: string, action: SubscriptionAction,
+                                expiresOn: string | null = null, note: string | null = null) =>
+  rpc<Subscription>('api_platform_subscription',
+    { p_club: clubId, p_action: action, p_expires: expiresOn, p_note: note })
 
 /* ================================ Persone ================================= */
 

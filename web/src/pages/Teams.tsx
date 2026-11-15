@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { errorMessage, activateSeason, createSeason, createTeam, listSeasons, listTeams,
   type Season, type Team } from '../lib/data'
 import { useAuth } from '../lib/auth'

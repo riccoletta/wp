@@ -352,44 +352,62 @@ D1 è sostituita da **D26**. Il resto non cambia: FASE 1 invariata, permessi sol
 niente backend Express, niente gateway di pagamento.
 
 ### M10a — Dati: società, proprietario, abbonamenti [P0]
-- [ ] `0012_clubs.sql` (additiva): `clubs`, `platform_owners`, `subscriptions`,
+- [x] `0012_clubs.sql` (additiva): `clubs`, `platform_owners`, `subscriptions`,
       `subscription_events`, `club_sessions`.
-- [ ] `club_id` su tutti i dati di società, con backfill su **Pallanuoto Milano** e
+- [x] `club_id` su tutti i dati di società, con backfill su **Pallanuoto Milano** e
       `default app_current_club()`: le `api_*` di inserimento non cambiano di una riga.
-- [ ] Chiavi esterne **composite** `(figlio, club_id) → (padre, club_id)`: un tesseramento, una
+- [x] Chiavi esterne **composite** `(figlio, club_id) → (padre, club_id)`: un tesseramento, una
       rosa, un versamento o un legame tutore↔minore fra società diverse è impossibile nel database.
-- [ ] Unicità ripensate per società: nome stagione, stagione attiva, email e identità Supabase.
-- [ ] Una stagione attiva **per società**.
+- [x] Unicità ripensate per società: nome stagione, stagione attiva, email e identità Supabase.
+- [x] Una stagione attiva **per società**.
 
 ### M10b — Sicurezza: gerarchia e isolamento [P0]
-- [ ] `app_is_platform_owner()` da tabella `platform_owners`, mai da metadati dell'account né
+- [x] `app_is_platform_owner()` da tabella `platform_owners`, mai da metadati dell'account né
       da corrispondenza di email. Nessun ruolo applicativo ha GRANT di scrittura su quella tabella.
-- [ ] `app_current_club()`: società scelta con `api_club_enter`, **validata a ogni chiamata**.
+- [x] `app_current_club()`: società scelta con `api_club_enter`, **validata a ogni chiamata**.
       Cambiare URL o parametro non apre nulla: la policy filtra su `club_id`.
-- [ ] Ogni policy di lettura e scrittura passa da `app_club_open(club_id)`.
-- [ ] Abbonamento per società: attivo → pieno; in scadenza/tolleranza → avviso; scaduto o sospeso →
+- [x] Ogni policy di lettura e scrittura passa da `app_club_open(club_id)`.
+- [x] Abbonamento per società: attivo → pieno; in scadenza/tolleranza → avviso; scaduto o sospeso →
       niente dati operativi (nemmeno via REST o RPC), restano accesso, stato abbonamento e uscita.
-- [ ] Il proprietario della piattaforma entra anche in una società sospesa, per rimetterla in piedi.
+- [x] Il proprietario della piattaforma entra anche in una società sospesa, per rimetterla in piedi.
+- [x] Due sole funzioni SECURITY DEFINER nuove (`api_club_enter`/`leave` e `api_platform_clubs`),
+      entrambe con il controllo d'accesso nella prima riga del corpo. Nessuna chiave di servizio
+      nel frontend: il portale è RPC + RLS, non una Edge Function in più.
 
 ### M10c — Portale del proprietario e applicazione per società [P0]
-- [ ] `/admin`: elenco società con stato, scadenza, numero di atleti e squadre; creazione,
+- [x] `/admin`: elenco società con stato, scadenza, numero di atleti e squadre; creazione,
       sospensione, rinnovo, riattivazione, "Entra nella società".
-- [ ] `/club/<slug>/…`: la stessa interfaccia FASE 1 di prima, nessuna pagina riscritta.
-- [ ] "Torna alle società" per il proprietario; l'utente di società apre solo la propria.
+- [x] `/club/<slug>/…`: la stessa interfaccia FASE 1 di prima. Le pagine non hanno cambiato
+      un indirizzo: cambia l'import di `Link`, che aggiunge il prefisso della società.
+- [x] "Torna alle società" per il proprietario; schermata dedicata per la società chiusa;
+      scelta della società per un'identità che ne ha più d'una.
+- [ ] **Non ancora cliccata in un browser.** Typecheck e build passano, ma `npm run e2e`
+      resta bloccato come in M9f: serve un progetto Supabase di prova (URL + chiave).
+      Le prove `e2e/03-abbonamento.spec.ts` sono scritte e si saltano da sole senza
+      `E2E_OWNER_EMAIL`, invece di fingere un verde.
 
 ### M10d — Migrazione dei dati esistenti [P0]
-- [ ] Pallanuoto Milano creata come prima società, tutti i dati già presenti associati a lei.
-- [ ] Licenza globale → abbonamento della società, stato e date preservati.
-- [ ] `npm run platform:owner`: promozione del proprietario a partire da una identità Supabase
-      già esistente, un atto unico e registrato, senza toccare gli admin di società.
-- [ ] Nessuna migrazione precedente modificata, nessun dato cancellato.
+- [x] Pallanuoto Milano creata come prima società dalla migrazione, tutti i dati già presenti
+      associati a lei (`club_id` non annullabile: nessuna riga resta senza società).
+- [x] Licenza globale → abbonamento della società, stato, scadenza e tolleranza preservati.
+- [x] `npm run platform:owner`: promozione registrata di una identità già presente in Supabase
+      Auth, idempotente, che si ferma davanti a un secondo proprietario e non tocca gli
+      amministratori di società.
+- [x] Nessuna migrazione precedente modificata, nessun dato cancellato.
+- [ ] Applicazione sul progetto reale `pnm`: **richiede approvazione esplicita** (vedi sotto).
 
 ### M10e — Prove [P0]
-- [ ] Due società indipendenti (Pallanuoto Milano + società sintetica di prova).
-- [ ] Proprietario vede entrambe ed entra in entrambe; admin di A non vede né scrive B e viceversa;
-      parametro RPC falsificato inutile; chiavi esterne incrociate rifiutate; coach/atleta/tutore
-      invariati; sospensione di A che non tocca B; società sospesa che non aggira la Data API;
-      riattivazione; dati di Pallanuoto Milano preservati.
+- [x] Due società indipendenti (Pallanuoto Milano + Nuoto Brianza sintetica): 82 test,
+      `server/test/multi-club.test.ts` più i 52 precedenti, nessuno indebolito.
+- [x] Proprietario che vede entrambe, entra in entrambe ed esce; admin di A che non vede né
+      scrive B (e viceversa); parametro RPC falsificato inutile; contatori e aggregati che non
+      attraversano le società; chiavi esterne incrociate rifiutate (`23503`); coach/atleta/tutore
+      invariati; poteri di piattaforma chiusi alla segreteria; una identità in due società.
+- [x] Sospensione di A che non tocca B; società sospesa che non aggira la Data API né le RPC;
+      riattivazione che restituisce tutti i dati; atti del proprietario registrati.
+- [x] `npm run check`, `npm test` (82), `npm run build`, `npm run db:verify` su database pulito
+      (20 verifiche su 20, comprese quelle nuove di piattaforma).
+- [ ] Playwright sui flussi multi-società: **non eseguito**, manca l'ambiente Supabase di prova.
 
 ### Ordine di applicazione in produzione (richiede approvazione esplicita)
 1. `npm run migrate` su un database di prova, poi `npm run db:verify` e `npm test`.

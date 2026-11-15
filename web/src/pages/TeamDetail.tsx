@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { addTeamCoach, addTeamMember, getTeam, listDues, removeTeamCoach, removeTeamMember,
   type Due, type TeamDetail as TeamDetailData } from '../lib/data'
 import { useAuth } from '../lib/auth'

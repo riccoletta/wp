@@ -1,4 +1,5 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { Link } from '../lib/club'
 import { listRegistrations, listSeasons, type Registration, type Season } from '../lib/data'
 import { Async, Card, Field, Select, Table, useApi } from '../components/ui'
 import { REGISTRATION_LABELS, formatDate } from '../lib/format'

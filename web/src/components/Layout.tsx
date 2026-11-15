@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import type { Role } from '../lib/data'
+import { NavLink, useClub } from '../lib/club'
+import { leaveClub, type Role } from '../lib/data'
 import { Button } from './ui'
-import LicenseBanner from './LicenseBanner'
+import SubscriptionBanner from './SubscriptionBanner'
 
 interface NavItem { to: string; label: string; roles: Role[] }
 
@@ -19,7 +20,8 @@ const NAV: NavItem[] = [
 ]
 
 export default function Layout() {
-  const { me, logout, can } = useAuth()
+  const { me, logout, can, refresh } = useAuth()
+  const { club } = useClub()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const items = NAV.filter((i) => can(...i.roles))
@@ -37,17 +39,24 @@ export default function Layout() {
             aria-controls="menu-principale" onClick={() => setOpen((v) => !v)}>
             <span aria-hidden>☰</span> Menù
           </Button>
-          <span className="font-semibold text-acqua-700">Gestionale Pallanuoto</span>
+          <span className="truncate font-semibold text-acqua-700">{club.name}</span>
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-sm text-slate-600 sm:inline">
-              {me?.firstName} {me?.lastName}
-            </span>
+            {me?.platformOwner ? (
+              // Il proprietario è ospite: esce dalla società e torna al portale.
+              <Button variant="ghost" onClick={async () => {
+                await leaveClub(); await refresh(); navigate('/admin')
+              }}>← Torna alle società</Button>
+            ) : (
+              <span className="hidden text-sm text-slate-600 sm:inline">
+                {me?.firstName} {me?.lastName}
+              </span>
+            )}
             <Button variant="ghost" onClick={async () => { await logout(); navigate('/accedi') }}>Esci</Button>
           </div>
         </div>
       </header>
 
-      <LicenseBanner />
+      <SubscriptionBanner />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row">
         <nav id="menu-principale" aria-label="Navigazione principale"

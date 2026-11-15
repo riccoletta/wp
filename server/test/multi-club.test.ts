@@ -164,6 +164,21 @@ describe('una società non vede l’altra', () => {
       "la segreteria non può allungarsi l'abbonamento da sé")
   })
 
+  it('nemmeno i contatori della dashboard contano le altre società', async () => {
+    const milanoCount = await call<any>(milano.admin.authUserId!, 'api_dashboard')
+    const brianzaCount = await call<any>(brianza.admin.authUserId!, 'api_dashboard')
+    const totale = await asSystem((tx) => tx.one<any>(
+      'select count(*)::int as n from people where not archived'))
+
+    assert.ok(milanoCount.counts.peopleActive > 0 && brianzaCount.counts.peopleActive > 0)
+    assert.ok(milanoCount.counts.peopleActive < totale!.n,
+      'un aggregato che somma due società sarebbe già una fuga di dati')
+    assert.equal(milanoCount.season.id, milano.seasonId)
+    assert.equal(brianzaCount.season.id, brianza.seasonId,
+      'ogni società ha la sua stagione attiva')
+    assert.ok(milanoCount.teams.every((t: any) => t.id === milano.teamA || t.id === milano.teamB))
+  })
+
   it('allenatore, atleta e tutore restano chiusi nella propria società', async () => {
     const coach = milano.coachA.authUserId!
     const persone = await call<any[]>(coach, 'api_people_list')
@@ -175,6 +190,55 @@ describe('una società non vede l’altra', () => {
 
     const tutore = await call<any[]>(milano.guardian.authUserId!, 'api_people_list')
     assert.ok(tutore.every((p) => p.id === milano.guardian.personId || p.id === milano.minor.personId))
+  })
+})
+
+describe('una identità in due società', () => {
+  // Stessa persona fisica, due accessi: uno per società, ognuno con i suoi ruoli.
+  const doppia = randomUUID()
+
+  before(async () => {
+    await asSystem(async (tx) => {
+      for (const club of [milano, brianza]) {
+        const p = await tx.one<any>(
+          `insert into people (club_id, first_name, last_name, kind) values ($1,'Dirigente','Due Societa','staff')
+           returning id`, [club.clubId])
+        const u = await tx.one<any>(
+          `insert into app_users (club_id, person_id, email, auth_user_id)
+           values ($1,$2,'due@example.test',$3) returning id`, [club.clubId, p!.id, doppia])
+        await tx.query(`insert into user_roles (user_id, role) values ($1,'admin')`, [u!.id])
+      }
+    })
+  })
+
+  it('prima di scegliere non è dentro nessuna società', async () => {
+    const me = await call<any>(doppia, 'api_me')
+    assert.equal(me.club, null)
+    assert.deepEqual(me.roles, [])
+    assert.equal(me.email, 'due@example.test')
+    assert.deepEqual(await call<any[]>(doppia, 'api_people_list'), [])
+  })
+
+  it('sceglie, e vede solo quella; poi cambia e cambia tutto', async () => {
+    const mie = await call<any[]>(doppia, 'api_my_clubs')
+    assert.deepEqual(mie.map((c) => c.slug).sort(), ['nuoto-brianza', 'pallanuoto-milano'])
+
+    await enter(doppia, 'pallanuoto-milano')
+    let me = await call<any>(doppia, 'api_me')
+    assert.equal(me.club.slug, 'pallanuoto-milano')
+    assert.deepEqual(me.roles, ['admin'])
+    let squadre = await call<any[]>(doppia, 'api_teams_list')
+    assert.ok(squadre.every((t) => t.id === milano.teamA || t.id === milano.teamB))
+
+    await enter(doppia, 'nuoto-brianza')
+    me = await call<any>(doppia, 'api_me')
+    assert.equal(me.club.slug, 'nuoto-brianza')
+    squadre = await call<any[]>(doppia, 'api_teams_list')
+    assert.ok(squadre.every((t) => t.id === brianza.teamA || t.id === brianza.teamB))
+  })
+
+  it('non diventa per questo proprietario della piattaforma', async () => {
+    assert.ok(denied(await sqlstate(() => call(doppia, 'api_platform_clubs'))))
   })
 })
 
