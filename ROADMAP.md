@@ -323,6 +323,24 @@ passato a Supabase Auth.
 - [ ] **Da approvare** (in `CODE_AUDIT.md`): doppia chiamata `api_me()` alla login,
   rimozione del client Realtime dal bundle, code splitting delle rotte.
 
+### M9j — Quote nella scheda squadra [P1]
+
+- [x] Colonna `Quota` nel roster accanto al certificato: stato derivato per atleta
+      (saldata / parziale con versato su dovuto / aperta con residuo / nessuna quota),
+      sommando **tutte** le quote della persona nella stagione della squadra.
+- [x] Riquadro "Quote della rosa" sopra il roster: dovuto, incassato, residuo e numero
+      di atleti senza quota, calcolati sulla sola rosa. Collegamento a `Quote` già filtrato
+      per stagione: nessun secondo modulo di pagamento.
+- [x] I dati economici sono chiesti solo se chi guarda è admin (`useApi` con `load = null`
+      per gli altri ruoli) e comunque la RLS non li restituirebbe: l'allenatore della squadra
+      non vede nessuna quota dei propri atleti.
+- [x] Somme in `web/src/lib/dues.ts`, logica pura senza import; nessuna migrazione, nessuna
+      RPC nuova — `api_dues_list(stagione)` bastava.
+- [x] Test (7 nuovi, 51 in totale): totali di rosa, versamento parziale, più quote sullo
+      stesso atleta, atleta senza quota, quote di un'altra stagione escluse, allenatore a
+      mani vuote, atleta che vede solo sé.
+- **Done:** la segreteria apre la squadra e vede subito chi è in regola e quanto manca.
+
 ---
 
 ## FASE 2 — Impianti e pianificazione (NON iniziare senza richiesta esplicita)
